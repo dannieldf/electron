@@ -29,6 +29,8 @@ class Component
     
     element;
 
+    parent = null;
+
     components = [];
 
     events = 
@@ -39,15 +41,15 @@ class Component
 
     lastPosition;
 
-    constructor(parameters)
+    constructor(parameters = {})
     {
         var i, j;
-        this.index = Page.getSequence();
+        this.index = Page.nextSequence();
         Component.instances[this.index] = this;
         parameters = 
             {
                 ...Component.defaults,
-                ...coalesce(parameters, {})
+                ...parameters
             };
         switch (parameters.node)
         {
@@ -89,10 +91,10 @@ class Component
         switch (key)
         {
             case 'name':
-                this[key] = value;
+                this.name = value;
                 break;
             case 'nickname':
-                this[key] = value;
+                this.nickname = value;
                 break;
             case 'parse':
                 this.parse = value ? true : false;
@@ -106,19 +108,7 @@ class Component
                 this.element[this.parse ? 'innerHTML' : 'innerText'] = value;
                 break;
             case 'components':
-                for (i in this.components)
-                {
-                    if 
-                    (
-                        !have(value) 
-                        || 
-                        !value.includes(this.components[i])
-                    )
-                    {
-                        this.components[i].destroy();
-                    }
-                }
-                this.components = [];
+                this.clear();
                 if (have(value))
                 {
                     for (i in value)
@@ -192,27 +182,64 @@ class Component
 
     append(component)
     {
+        if (this == component)
+        {
+            Error
+            (
+                str.component['appending_itself'], 
+                'Component', 
+                'append', 
+                component
+            );
+        }
+        if (!component instanceof Component)
+        {
+            Error
+            (
+                str.component['invalid_component'], 
+                'Component', 
+                'append', 
+                component
+            );
+        }
         this.element.appendChild(component.element);
         this.components.push(component);
+        component.parent = this;
     }
 
-    insertBefore(new_component, existing_nickname)
+    insertBefore(new_component, existing_component)
     {
         var i;
-        if (!have(existing_nickname))
+        if (!new_component instanceof Component)
         {
-            return false;
+            Error
+            (
+                str.component['invalid_component'], 
+                'Component', 
+                'insertBefore', 
+                new_component
+            );
+        }
+        if (!existing_component instanceof Component)
+        {
+            Error
+            (
+                str.component['invalid_component'], 
+                'Component', 
+                'insertBefore', 
+                existing_component
+            );
         }
         for (i in this.components)
         {
             if (this.components[i] == new_component)
             {
-                return false;  
+                return false;
             }
         }
         for (i in this.components)
         {
-            if (this.components[i].nickname == existing_nickname)
+            if (this.components[i] == existing_component)
             {
                 this.element.insertBefore
                 (
@@ -220,25 +247,32 @@ class Component
                     this.components[i].element
                 );
                 this.components.splice(i, 0, new_component);
+                new_component.parent = this;
                 return true;
             }
         }
         return false;
     }
 
-    removeChild(nickname)
+    removeChild(component)
     {
         var i;
-        if (have(nickname))
+        if (!component instanceof Component)
         {
-            for (i in this.components)
+            Error
+            (
+                str.component['invalid_component'], 
+                'Component', 
+                'removeChild', 
+                component
+            );
+        }
+        for (i in this.components)
+        {
+            if (this.components[i] == component)
             {
-                if (this.components[i].nickname == nickname)
-                {
-                    this.element.removeChild(this.components[i].element);
-                    this.components.splice(i, 1);
-                    return true;
-                }
+                this.components[i].destroy();
+                return true;
             }
         }
         return false;
@@ -246,13 +280,10 @@ class Component
 
     clear()
     {
-        var i;
-        for (i in this.components)
+        while (this.components.length)
         {
-            this.components[i].destroy();
+            this.components[0].destroy();
         }
-        this.components = [];
-        this.element.innerHTML = '';
         if (this.changedPosition())
         {
             this.onposition();
@@ -263,25 +294,26 @@ class Component
 
     destroy(cascade = true)
     {
-        var i, indexes;
+        var i;
         this.ondestroy();
         if (cascade)
         {
-            indexes = [];
-            for (i in this.components)
+            while (this.components.length)
             {
-                indexes.push(this.components[i].index);
-            }
-            for (i in indexes)
-            {
-                Component.get(indexes[i]).destroy();
+                this.components[0].destroy();
             }
         }
-        this.components = [];
-        this.element.innerHTML = '';
-        if (have(this.element.parentNode))
+        if (have(this.parent))
         {
             this.element.parentNode.removeChild(this.element);
+            for (i in this.parent.components)
+            {
+                if (this.parent.components[i] == this)
+                {
+                    this.parent.components.splice(i, 1);
+                    break;
+                }
+            }
             this.updatePosition();
             Component.repositionAll(this);
         }
@@ -309,35 +341,6 @@ class Component
         return false;
     }
 
-    getValue()
-    {
-        return this.element.value;
-    }
-
-    setValue(value)
-    {
-        this.element.value = value;
-    }
-
-    ajaxParameters()
-    {
-        var i, parameters;
-        parameters = {};
-        for (i in this.components)
-        {
-            if (have(this.components[i].name))
-            {
-                parameters[this.components[i].name] = this.components[i].getValue();
-            }
-            parameters =
-                {
-                    ...parameters,
-                    ...this.components[i].ajaxParameters()
-                }
-        }
-        return parameters;
-    }
-
     getComponent()
     {
         var i, j, component, found;
@@ -362,18 +365,33 @@ class Component
         return component;
     }
 
-    deleteComponent(nickname, cascade = true)
+    getValue()
     {
-        var i;
+        return this.element.value;
+    }
+
+    setValue(value)
+    {
+        this.element.value = value;
+    }
+
+    serverParameters()
+    {
+        var i, parameters;
+        parameters = {};
         for (i in this.components)
         {
-            if (this.components[i].nickname == nickname)
+            if (have(this.components[i].name))
             {
-                this.components[i].destroy(cascade);
-                this.components.splice(i, 1);
-                return;
+                parameters[this.components[i].name] = this.components[i].getValue();
             }
+            parameters =
+                {
+                    ...parameters,
+                    ...this.components[i].serverParameters()
+                }
         }
+        return parameters;
     }
 
     html(outer = true)
@@ -465,13 +483,86 @@ class Component
 
     static start()
     {
-        document.addEventListener('resize', Component.repositionAll);
+        document.addEventListener
+        (
+            'resize', 
+            Component.repositionAll
+        );
+        str.component =
+            {
+                appending_itself: 'it is invalid for a component to attach to itself',
+                invalid_component: 'the method parameter should be a valid component'
+            };
     }
 }
 
-class Ajax
+class Audio extends Component
 {
+    static defaults =
+        {
+            error_message: '',
+            sources_by_type: {}
+        };
 
+    error_message = '';
+
+    constructor(parameters = {})
+    {
+        var i;
+        parameters =
+            {
+                ...Audio.defaults,
+                ...{error_message: str.audio.error_message},
+                ...parameters
+            };
+        for (i in parameters)
+        {
+            this.set(i, parameters[i]);
+        }
+    }
+
+    set(key, value)
+    {
+        var i, j;
+        switch (key)
+        {
+            case 'error_message':
+                this.error_message = value;
+                break;
+            case 'sources_by_type':
+                j = 0;
+                super.set('content', this.error_message);
+                for (i in value)
+                {
+                    this.append
+                    (
+                        new Component
+                        (
+                            {
+                                nickname: 'source_' + (++j),
+                                node: 'source',
+                                attributes:
+                                {
+                                    type: i,
+                                    src: value[i]
+                                }
+                            }
+                        )
+                    );
+                }
+                break;
+            default:
+                super.set(i, value);
+        }
+    }
+
+    start()
+    {
+        str.audio =
+            {
+                error_message: 'Your browser does not support the audio tag.'
+            };
+    }
 }
 
 class Button extends Component
@@ -1026,7 +1117,7 @@ class Datatable extends Component
             header.insertBefore
             (
                 title,
-                'tools'
+                header.getComponent('tools')
             );
         }
         return title;
@@ -1073,6 +1164,22 @@ class Datatable extends Component
 
     static start()
     {
+        str.datatable =
+            {
+                refresh: 'Atualizar Lista',
+                total: 'Total',
+                page: 'Página',
+                first: 'primeira',
+                last: 'última'
+            };
+        styles.datatable_head_color = '#5f5f5f';
+        styles.datatable_head_bgcolor = '#ffffff';
+        styles.datatable_row_color_1 = '#5f5f5f';
+        styles.datatable_row_bgcolor_1 = '#ffffff';
+        styles.datatable_row_color_2 = '#5f5f5f';
+        styles.datatable_row_bgcolor_2 = '#efefef';
+        styles.datatable_border = 'solid 2px #aaa';
+
         Datatable.toolSearch = 
             class extends Datatable.tool
             {
@@ -1285,7 +1392,7 @@ class Datatable extends Component
                                             new Component
                                             (
                                                 {
-                                                    content: str[0]
+                                                    content: str.datatable['refresh']
                                                 }
                                             )
                                         ],
@@ -1326,7 +1433,7 @@ class Datatable extends Component
                                 (
                                     {
                                         node: 'label',
-                                        content: str[2] + ': ',
+                                        content: str.datatable['page'] + ': ',
                                         attributes: 
                                             {
                                                 for: parameters.datatable_instance.nickname + '_page'
@@ -1501,7 +1608,7 @@ class Datatable extends Component
                                     {
                                         node: 'option',
                                         attributes: {value: 1},
-                                        content: str[4]
+                                        content: str.datatable['first']
                                     }
                                 )
                             );
@@ -1531,7 +1638,7 @@ class Datatable extends Component
                                         {
                                             node: 'option',
                                             attributes: {value: this.datatable_instance.pages},
-                                            content: str[5]
+                                            content: str.datatable['last']
                                         }
                                     )
                                 );
@@ -1635,9 +1742,523 @@ class Datatable extends Component
                     this.getComponent('value').set
                     (
                         'content',
-                        str[1] + ': ' + this.datatable_instance.total
+                        str.datatable['total'] + ': ' + this.datatable_instance.total
                     );
                 }
+            }
+    }
+}
+
+class File extends Component
+{
+    static defaults =
+        {
+            accept: '',
+            multiple: false,
+            files: []
+        };
+
+    accept = null;
+
+    multiple = null;
+
+    files = null;
+
+    constructor(parameters)
+    {
+        var i;
+        super();
+        this.append
+        (
+            new Component
+            (
+                {
+                    nickname: 'input',
+                    node: 'input',
+                    style:
+                    {
+                        display: 'none'
+                    },
+                    attributes:
+                    {
+                        onchange: 'Component.get(' + this.index + ').change();',
+                        type: 'file'
+                    }
+                }
+            )
+        );
+        this.append
+        (
+            new Component
+            (
+                {
+                    nickname: 'drag_area',
+                    style:
+                    {
+                        height: '100px',
+                        cursor: 'pointer',
+                        color: styles['text_color_normal'],
+                        background_color: styles['background_color_normal'],
+                        display: 'flex',
+                        justify_content: 'center',
+                        align_items: 'center',
+                        user_select: 'none',
+                        border_radius: '10px'
+                    },
+                    attributes:
+                    {
+                        ondragover: 'event.preventDefault();',
+                        ondragenter: 'Component.get(' + this.index + ').dragenter();',
+                        ondragleave: 'Component.get(' + this.index + ').dragleave();',
+                        ondrop: 'Component.get(' + this.index + ').drop();',
+                        onmouseover: 'Component.get(' + this.index + ').mouseover();',
+                        onmouseout: 'Component.get(' + this.index + ').mouseout();',
+                        onclick: 'Component.get(' + this.index + ').click();'
+                    }
+                }
+            )
+        );
+        parameters = 
+            {
+                ...File.defaults,
+                ...parameters
+            };
+        for (i in parameters)
+        {
+            this.set(i, parameters[i]);
+        }
+    }
+
+    set (key, value)
+    {
+        var i;
+        switch (key)
+        {
+            case 'accept':
+                this.accept = value;
+                this.getComponent('input').setAttribute
+                (
+                    'accept', 
+                    value
+                );
+                break;
+            case 'multiple':
+                this.multiple = value ? true : false;
+                this.getComponent('input').setAttribute
+                (
+                    'multiple', 
+                    this.multiple
+                );
+                this.getComponent('drag_area').set
+                (
+                    'content', 
+                    this.multiple ? str.file['drag_many'] : str.file['drag_one']
+                );
+                break;
+            case 'files':
+                this.files = [];
+                for (i in value)
+                {
+                    this.add
+                    (
+                        false,
+                        value[i],
+                        false
+                    );
+                }
+                break;
+            default:
+                super.set(key, value);
+        }
+    }
+
+    clear()
+    {
+        var i;
+        for (i in this.files)
+        {
+            this.remove(this.files[i].index);
+        }
+    }
+
+    add(from_client, file_data, trashed)
+    {
+        var listing, component, index;
+        index = Page.nextSequence();
+        if (trashed)
+        {
+
+        }
+        else
+        {
+            if (!this.multiple)
+            {
+                this.clear();
+            }
+            if (file_data.type.match(/^image\/.*/))
+            {
+                component =
+                    new Component
+                    (
+                        {
+                            node: 'img',
+                            style:
+                            {
+                                max_height: '200px',
+                                max_width: '200px',
+                                box_sizing: 'border-box',
+                                border: '0',
+                                margin: '0',
+                                cursor: 'pointer'
+                            }
+                        }
+                    );
+            }
+            else if (file_data.type.match(/^video\/.*/))
+            {
+                component = new Video();
+
+            }
+            else if (file_data.type.match(/^audio\/.*/))
+            {
+                component = new Audio();
+            }
+            else
+            {
+                component =
+                    new Component
+                    (
+                        {
+                            content: file_data.name,
+                            style:
+                            {
+                                text_align: 'left'
+                            }
+                        }
+                    );
+            }
+            if (!have(listing))
+            {
+                listing =
+                    new Component
+                    (
+                        {
+                            nickname: 'listing',
+                            style:
+                            {
+                                overflow: 'auto',
+                                max_height: '200px',
+                                margin_top: '5px'
+                            }
+                        }
+                    );
+                this.append(listing);
+            }
+            listing.append
+            (
+                new Component
+                (
+                    {
+                        nickname: 'file_row_' + index,
+                        attributes:
+                        {
+                            onmouseover: 
+                                'this.style.backgroundColor = "' + styles['background_color_highlight'] + '";',
+                            onmouseout: 
+                                'this.style.backgroundColor = "initial";'
+                        },
+                        style:
+                        {
+                            padding: '10px',
+                            display: 'flex',
+                            align_items: 'flex-start',
+                            justify_content: 'space-between',
+                            overflow: 'auto'
+                        },
+                        components:
+                        [
+                            new Component
+                            (
+                                {
+                                    nickname: 'number',
+                                    content: (this.files.length + 1) + '.',
+                                    style:
+                                    {
+                                        font_weight: 'bold',
+                                        margin_right: '4px'
+                                    }
+                                }
+                            ),
+                            new Component
+                            (
+                                {
+                                    style:
+                                    {
+                                        width: '100%'
+                                    },
+                                    components:
+                                    [
+                                        component
+                                    ]
+                                }
+                            ),
+                            new Icon
+                            (
+                                {
+                                    type: 'info',
+                                    style: 
+                                    {
+                                        cursor: 'pointer',
+                                        user_select: 'none',
+                                        color: styles['text_color_normal']
+                                    }
+                                }
+                            ),
+                            new Icon
+                            (
+                                {
+                                    type: 'delete',
+                                    style: 
+                                    {
+                                        cursor: 'pointer',
+                                        user_select: 'none',
+                                        color: styles['text_color_highlight']
+                                    }
+                                }
+                            )
+                        ]
+                    }
+                )
+            );
+            component.set('nickname', 'file_' + index);
+            this.files.push
+            (
+                {
+                    index: index,
+                    from_client: from_client, 
+                    file_data: file_data,
+                    trashed: trashed
+                }
+            );
+            return index;
+        }
+    }
+
+    remove(index)
+    {
+        var i, j, listing;
+        listing = this.getComponent('listing');
+        if (this.files.length == 1)
+        {
+            this.removeChild('listing');
+        }
+        else
+        {
+            listing.getComponent('file_row_' + index).destroy();
+            j = 0;
+            for (i in listing.components)
+            {
+                listing.components[i].getComponent('number').set('content', ++j + '.');
+            }
+        }
+        for (i in this.files)
+        {
+            if (this.files[i].index == index)
+            {
+                this.files.splice(i, 1);
+                break;
+            }
+        }
+    }
+
+    choose()
+    {
+
+    }
+
+    change()
+    {
+        this.processUpload
+        (
+            this.getComponent('input').element.files
+        );
+    }
+
+    click()
+    {
+        this.getComponent('input').element.click();
+    }
+
+    mouseover()
+    {
+        this.getComponent('drag_area').setStyle
+        (
+            'text_decoration', 
+            'underline'
+        );
+    }
+
+    mouseout()
+    {
+        this.getComponent('drag_area').setStyle
+        (
+            'text_decoration', 
+            'none'
+        );
+    }
+
+    highlight(on)
+    {
+        var drag_area;
+        drag_area = this.getComponent('drag_area');
+        if (on)
+        {
+            drag_area.setStyle
+            (
+                'background_color', 
+                styles['background_color_highlight']
+            );
+            drag_area.setStyle
+            (
+                'color', 
+                styles['text_color_highlight']
+            );
+        }
+        else
+        {
+            drag_area.setStyle
+            (
+                'background_color', 
+                styles['background_color_normal']
+            );
+            drag_area.setStyle
+            (
+                'color', 
+                styles['text_color_normal']
+            );
+        }
+    }
+
+    dragenter()
+    {
+        this.highlight(true);
+        event.preventDefault();
+    }
+
+    dragleave()
+    {
+        this.highlight(false);
+        event.preventDefault();
+    }
+
+    drop()
+    {
+        event.preventDefault();
+        this.highlight(false);
+        if
+        (
+            !isset(event) 
+            || 
+            !isset(event.dataTransfer) 
+            || 
+            !isset(event.dataTransfer.files)
+        )
+        {
+            return;
+        }
+        switch (event.dataTransfer.files.length)
+        {
+            case 0:
+                Notifier.send
+                (
+                    new Component
+                    (
+                        {
+                            content: str.file['no_file']
+                        }
+                    )
+                );
+                return;
+            case 1:
+                break;
+            default:
+                if (!this.multiple)
+                {
+                    Notifier.send
+                    (
+                        new Component
+                        (
+                            {
+                                content: str.file['only_one_allowed']
+                            }
+                        )
+                    );
+                    return;
+                }
+        }
+        this.processUpload(event.dataTransfer.files);
+    }
+
+    processUpload(files)
+    {
+        var i, file_reader, component_index;
+        for (i = 0; i < files.length; i++)
+        {
+            if (typeof files[i] != 'object')
+            {
+                continue;
+            }
+            component_index = 
+                this.add
+                (
+                    true,
+                    files[i],
+                    false
+                );
+            if (files[i].type.match(/^[audio|image|video]\/.*/))
+            {
+                file_reader = new FileReader();
+                file_reader.onload =
+                    new Function
+                    (
+                        "Component.get(" + this.index + ").srcLoad(" + component_index + ", '" + files[i].type + "');"
+                    );
+                file_reader.readAsDataURL(files[i]);
+            }
+        };
+    }
+
+    srcLoad(component_index, type)
+    {
+        var component, parameters;
+        component = this.getComponent('file_' + component_index);
+        if (type.match(/^image\/.*/))
+        {
+            component.setAttribute('scr', event.target.result);
+        }
+        else
+        {
+            parameters = {};
+            parameters[type] = event.target.result;
+            component.set('sources_by_type', parameters);
+        }
+    }
+
+    getValue()
+    {
+        return this.name && this.files.length ? this.files : null;
+    }
+
+    static start()
+    {
+        str.file =
+            {
+                drag_one: 'arraste um arquivo aqui ou clique',
+                drag_many: 'arraste arquivos aqui ou clique',
+                clear: 'limpar',
+                trash: 'lixeira',
+                no_file: 'nenhum arquivo localizado',
+                only_one_allowed: 'envie  somente um arquivo'
             }
     }
 }
@@ -1715,7 +2336,7 @@ class Glass extends Component
                             style: 
                             {
                                 background_color: styles['background_color_title'],
-                                color: styles['text_color'],
+                                color: styles['text_color_normal'],
                                 padding: '13px',
                                 user_select: 'none',
                                 display: 'flex',
@@ -1756,7 +2377,7 @@ class Glass extends Component
                             {
                                 font_weight: 'bold',
                                 background_color: styles['background_color_title'],
-                                color: styles['text_color'],
+                                color: styles['text_color_normal'],
                                 user_select: 'none',
                                 padding: '13px',
                                 display: 'flex',
@@ -1845,7 +2466,7 @@ class Header extends Component
                 component = this.getComponent(this.nicknames['logo']);
                 if (have(component))
                 {
-                    this.removeChild(this.nicknames['logo']);
+                    this.removeChild(component);
                 }
                 this[key] = value;
                 if (have(value))
@@ -1863,7 +2484,7 @@ class Header extends Component
                         );
                     if (have(component))
                     {
-                        this.insertBefore(value, component.nickname);
+                        this.insertBefore(value, component);
                     }
                     else
                     {
@@ -1879,7 +2500,7 @@ class Header extends Component
                 component = this.getComponent(this.nicknames['core']);
                 if (have(component))
                 {
-                    this.removeChild(this.nicknames['core']);
+                    this.removeChild(component);
                 }
                 this[key] = value;
                 if (have(value))
@@ -1892,7 +2513,7 @@ class Header extends Component
                     component = this.getComponent(this.nicknames['user'])
                     if (have(component))
                     {
-                        this.insertBefore(value, component.nickname);
+                        this.insertBefore(value, component);
                     }
                     else
                     {
@@ -1908,7 +2529,7 @@ class Header extends Component
                 component = this.getComponent(this.nicknames['user']);
                 if (have(component))
                 {
-                    this.removeChild(this.nicknames['user']);
+                    this.removeChild(component);
                 }
                 this[key] = value;
                 if (have(value))
@@ -1998,7 +2619,7 @@ class Header extends Component
                 icon_type: 'person',
                 style:
                     {
-                        color: styles['text_color'],
+                        color: styles['text_color_normal'],
                         display: 'flex',
                         align_items: 'center',
                         justify_content: 'center',
@@ -2029,7 +2650,7 @@ class Header extends Component
                             ...Menu.defaults.style,
                             ...
                             {
-                                background_color: styles['background_color']
+                                background_color: styles['background_color_normal']
                             }
                         }
                 }
@@ -2258,6 +2879,290 @@ class Keys
     }
 }
 
+class Notifier
+{
+    static active = true;
+
+    static component = null;
+
+    static items = [];
+
+    static send
+    (
+        component, 
+        autodestroy = true, 
+        delay = 10000, 
+        type = 'warning'
+    )
+    {
+        var style, icons, index, item;
+        if (!this.active)
+        {
+            return;
+        }
+        index = Page.nextSequence();
+        style =
+            {
+                padding: '10px',
+                border_radius: '5px',
+                display: 'flex',
+                align_items: 'flex-start',
+                justify_content: 'space_between',
+                border: 'solid 1px #cdcdcd'
+            };
+        switch (type)
+        {
+            case 'error':
+                style['background_color'] = '#ffe2e6';
+                break;
+            case 'warning':
+                style['background_color'] = '#f4f44a';
+                break;
+            case 'success':
+                style['background_color'] = '#bdecbd';
+                break;
+            default:
+                error
+                (
+                    str.notifier['invalid_type'], 
+                    'Notifier', 
+                    'item', 
+                    type
+                );
+        }
+        icons = 
+            new Icon
+            (
+                {
+                    type: 'close',
+                    attributes:
+                    {
+                        onclick: 'Notifier.close(' + index + ');'
+                    },
+                    style:
+                    {
+                        cursor: 'pointer',
+                        user_select: 'none',
+                        padding: '4px',
+                        display: 'flex',
+                        align_items: 'center',
+                        justify_content: 'center'
+                    }
+                }
+            );
+        if (autodestroy)
+        {
+            icons =
+                new Component
+                (
+                    {
+                        nickname: 'icons',
+                        components:
+                        [
+                            icons,
+                            new Icon
+                            (
+                                {
+                                    nickname: 'keep',
+                                    type: 'pin_drop',
+                                    attributes:
+                                    {
+                                        onclick: 'Notifier.keep(' + index + ');',
+                                        title: str.notifier['keep']
+                                    },
+                                    style:
+                                    {
+                                        color: '#cccccc',
+                                        cursor: 'pointer',
+                                        user_select: 'none',
+                                        padding: '4px',
+                                        display: 'flex',
+                                        align_items: 'center',
+                                        justify_content: 'center'
+                                    }
+                                }
+                            )
+                        ]
+                    }
+                );
+        }
+        item = 
+        {
+            index: index,
+            opacity: 100,
+            component: 
+                new Component
+                (
+                    {
+                        style: style,
+                        components:
+                        [
+                            new Component
+                            (
+                                {
+                                    components: [component],
+                                    style:
+                                    {
+                                        max_height: '300px',
+                                        overflow: 'auto',
+                                        width: '100%'
+                                    }
+                                }
+                            ),
+                            icons
+                        ]
+                    }
+                ),
+            timeout: null,
+            fade_interval: null
+        };
+        this.items.push(item);
+        if (!this.component)
+        {
+            this.component = 
+                new Component
+                (
+                    {
+                        style:
+                        {
+                            display: 'flex',
+                            flex_direction: 'column',
+                            gap: '10px',
+                            padding: '10px',
+                            width: '300px',
+                            position: 'fixed',
+                            bottom: '0',
+                            right: '0',
+                            max_height: '100%',
+                            overflow: 'auto',
+                            z_index: Page.getZindex('notification')
+                        }
+                    }
+                );
+            Page.body.append(this.component);
+        }
+        this.component.append(item.component);
+        if (autodestroy)
+        {
+            item.timeout = 
+                setTimeout
+                (
+                    new Function
+                    (
+                        'Notifier.startFadeout(' + item.index + ');'
+                    ), 
+                    delay
+                );
+        }
+    }
+
+    static startFadeout(index)
+    {
+        var i, item;
+        for (i in this.items)
+        {
+            item = this.items[i];
+            if (item.index == index)
+            {
+                item.fade_interval = 
+                    setInterval
+                    (
+                        new Function
+                        (
+                            'Notifier.fade(' + item.index + ');'
+                        ),
+                        50
+                    );
+                return;
+            }
+        }
+    }
+
+    static fade(index)
+    {
+        var i, item;
+        for (i in this.items)
+        {
+            item = this.items[i];
+            if (item.index == index)
+            {
+                item.opacity--;
+                if (item.opacity <= 0)
+                {
+                    item.opacity = 0;
+                }
+                item.component.setStyle
+                (
+                    'opacity', 
+                    item.opacity + '%'
+                );
+                if (!item.opacity)
+                {
+                    item.component.destroy();
+                    delete this.items[i];
+                    if (!have(this.items.length))
+                    {
+                        this.component.destroy();
+                        this.component = null;
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    static close(index)
+    {
+        var i, item;
+        for (i in this.items)
+        {
+            item = this.items[i];
+            if (item.index == index)
+            {
+                clearTimeout(item.timeout);
+                clearInterval(item.fade_interval);
+                item.component.destroy();
+                delete this.items[i];
+                return;
+            }
+        }
+    }
+
+    static keep(index)
+    {
+        var i, item;
+        for (i in this.items)
+        {
+            item = this.items[i];
+            if (item.index == index)
+            {
+                item.component.setStyle
+                (
+                    'opacity', 
+                    '100%'
+                );
+                item.component.getComponent('icons', 'keep').setStyle
+                (
+                    'color', 
+                    styles['text_color_highlight']
+                );
+                clearTimeout(item.timeout);
+                clearInterval(item.fade_interval);
+                return;
+            }
+        }
+    }
+
+    static start()
+    {
+        str.notifier =
+            {
+                keep: 'clique para manter essa notificação',
+                invalid_type: 'Invalid type'
+            };
+    }
+}
+
 class Menu
 {
     static defaults =
@@ -2300,7 +3205,7 @@ class Menu
                 ...defaults,
                 ...parameters
             };
-        this.index = Page.getSequence();
+        this.index = Page.nextSequence();
         Menu.instances[this.index] = this;
         this.component =
             have(parameters.component) ?
@@ -2821,6 +3726,121 @@ class Select extends Component
     }
 }
 
+class Server
+{
+    static defaults =
+        {
+            http_verb: 'post',
+            async: true,
+            api_endpoint: 0,
+            method: '',
+            parameters: {},
+            callback: null,
+            component_notification_on_error: null
+        };
+    
+    static endpoints =
+        [
+            'index'
+        ];
+
+    static requests = [];
+
+    static call(parameters)
+    {
+        var i, index, request, form_data, defaults;
+        index = Page.nextSequence();
+        defaults = Object.assign({}, Server.defaults);
+        if (!have(parameters['component_notification_on_error']))
+        {
+            defaults.component_notification_on_error =
+                new Component
+                (
+                    {
+                        content: str.server['conection_failure']
+                    }
+                );
+        }
+        parameters = 
+            {
+                ...Server.defaults,
+                ...parameters
+            };
+        request = new XMLHttpRequest();
+        form_data = new FormData();
+        request.open
+        (
+            parameters.http_verb, 
+            Server.endpoints[parameters.api_endpoint], 
+            parameters.async
+        );
+        request.onreadystatechange = 
+            new Function
+            (
+                'Server.onready(' + index + ');'
+            );
+        for (i in parameters.parameters)
+        {
+            form_data.append
+            (
+                i, 
+                parameters[i]
+            );
+        }
+        Server.requests.push
+        (
+            {
+                index: index,
+                request: request
+            }
+        );
+        request.send(form_data);
+    }
+
+    static onready(index)
+    {
+        var request;
+        for (i in Server.requests)
+        {
+            if (Server.requests[i].index == index)
+            {
+                request = Server.requests[i].request;
+                if (request.readyState === 4)
+                {
+                    if (request.status === 200) 
+                    {
+                        if (typeof request.callback == 'function')
+                        {
+                            request.callback(JSON.parse(request.responseText));
+                        }
+                    }
+                    else
+                    {
+                        console.log('Server error. Request: ', request);
+                        if (request.component_notification_on_error)
+                        {
+                            Notifier.send
+                            (
+                                request.component_notification_on_error
+                            );
+                        }
+                    }
+                    delete Server.requests[i];
+                    break;
+                }
+            }
+        }
+    }
+
+    static start()
+    {
+        str.server =
+            {
+                conection_failure: '#falha na conexão#'
+            };
+    }
+}
+
 class Svg extends Component
 {
     static defaults =
@@ -2983,8 +4003,8 @@ class Tabsheet extends Component
                 ...Tabsheet.defaults,
                 ...
                 {
-                    text_color: styles['text_color'],
-                    background_color: styles['background_color'],
+                    text_color: styles['text_color_normal'],
+                    background_color: styles['background_color_normal'],
                     text_color_highlight: styles['text_color_highlight'],
                     background_color_highlight: styles['background_color_highlight'],
                     trigger: Tabsheet.trigger('color')
@@ -3228,10 +4248,10 @@ class Tabsheet extends Component
             default:
                 error
                 (
-                    'Invalid trigger: "' + type + '". Valids: border, check, color.',
+                    'Invalid trigger type: Valids: border, check, color.',
                     'Tabsheet', 
                     'trigger', 
-                    arguments 
+                    type 
                 );
         }
     }
@@ -3249,9 +4269,9 @@ class Tabsheet extends Component
                         icon: null,
                         padding: 10,
                         onclick: null,
-                        text_color: styles['text_color'],
+                        text_color: styles['text_color_normal'],
                         text_color_highlight: styles['text_color_highlight'],
-                        background_color: styles['background_color']
+                        background_color: styles['background_color_normal']
                     };
                 parameters =
                     {
@@ -3306,9 +4326,9 @@ class Tabsheet extends Component
                         padding: 10,
                         check_size: 24,
                         onclick: null,
-                        text_color: styles['text_color'],
+                        text_color: styles['text_color_normal'],
                         text_color_highlight: styles['text_color_highlight'],
-                        background_color: styles['background_color']
+                        background_color: styles['background_color_normal']
                     };
                 parameters =
                     {
@@ -3377,9 +4397,9 @@ class Tabsheet extends Component
                         icon: '',
                         padding: 10,
                         onclick: null,
-                        text_color: styles['text_color'],
+                        text_color: styles['text_color_normal'],
                         text_color_highlight: styles['text_color_highlight'],
-                        background_color: styles['background_color']
+                        background_color: styles['background_color_normal']
                     };
                 parameters =
                     {
@@ -3428,10 +4448,10 @@ class Tabsheet extends Component
             default:
                 error
                 (
-                    'Invalid item: "' + type + '". Valids: border, check, color.',
+                    'Invalid item type. Valids: border, check, color.',
                     'Tabsheet', 
                     'item', 
-                    arguments
+                    type
                 );
         }
     }
@@ -3513,27 +4533,72 @@ class Textarea extends Component
     }
 }
 
-class ZIndex
+class Video extends Component
 {
-    static layers = 
-        [
-            'default', 
-            'window', 
-            'notification', 
-            'menu', 
-            'tips'
-        ];
+    static defaults =
+        {
+            error_message: '',
+            sources_by_type: {}
+        };
 
-    static get(type)
+    error_message = '';
+
+    constructor(parameters)
     {
         var i;
-        for (i in this.layers)
-        {
-            if (this.layers[i] == type)
+        parameters =
             {
-                return parseInt(i);
-            }
+                ...Video.defaults,
+                ...{error_message: str.video.error_message},
+                ...parameters
+            };
+        for (i in parameters)
+        {
+            this.set(i, parameters[i]);
         }
+    }
+
+    set(key, value)
+    {
+        var i, j;
+        switch (key)
+        {
+            case 'error_message':
+                this.error_message = value;
+                break;
+            case 'sources_by_type':
+                super.set('content', this.error_message);
+                j = 0;
+                for (i in value)
+                {
+                    this.append
+                    (
+                        new Component
+                        (
+                            {
+                                nickname: 'source_' + (++j),
+                                node: 'source',
+                                attributes:
+                                {
+                                    type: i,
+                                    src: value[i]
+                                }
+                            }
+                        )
+                    );
+                }
+                break;
+            default:
+                super.set(i, value);
+        }
+    }
+
+    start()
+    {
+        str.video =
+            {
+                error_message: 'Your browser does not support the video tag.'
+            };
     }
 }
 
@@ -3547,10 +4612,12 @@ class Page
 
     static styles =
         {
-            text_color: '#5d6688',
-            background_color: '#eff0f4',
+            text_color_normal: '#5d6688',
+            background_color_normal: '#eff0f4',
             text_color_highlight: '#e35150',
             background_color_highlight: '#fdeeee',
+            text_color_discreet: '#888888',
+            background_color_discreet: '#eeeeee',
             background_color_title: '#dfe1e8',
             button_primary_color: '#ffffff',
             button_primary_bgcolor: '#e35150',
@@ -3570,26 +4637,9 @@ class Page
             button_dark_bgcolor: '#343a40',
             button_link_color: '#007bff',
             button_link_bgcolor: '#ffffff',
-            datattable_head_color: '#5f5f5f',
-            datattable_head_bgcolor: '#ffffff',
-            datattable_row_color_1: '#5f5f5f',
-            datattable_row_bgcolor_1: '#ffffff',
-            datattable_row_color_2: '#5f5f5f',
-            datatable_row_bgcolor_2: '#efefef',
-            datattable_border: 'solid 2px #aaa',
             outline: 'solid 1px #c7c7c7',
             input_border: 'solid 1px #e2e3e7',
             input_radius: '3px'
-        };
-
-    static str =
-        {
-            0: 'Atualizar Lista',
-            1: 'Total',
-            2: 'Página',
-            3: 'The specified component has already been inserted',
-            4: 'primeira',
-            5: 'última'
         };
 
     static img =
@@ -3598,7 +4648,16 @@ class Page
 
     static font =
         {
-        }
+        };
+
+    static layers = 
+        [
+            'default', 
+            'window', 
+            'notification', 
+            'menu', 
+            'tips'
+        ];
 
     static start()
     {
@@ -3609,9 +4668,9 @@ class Page
         window.error = 
             function(msg, className = '', method = '', parameters = '')
             {
-                if (className)
+                if (method)
                 {
-                    console.log('Error calling ' + className + '.' + method + '():', parameters);
+                    console.log('Error calling ' + (className ? className + '.' : '') + method + '():', parameters);
                 }
                 throw msg;
             };
@@ -3762,15 +4821,19 @@ class Page
                         }
                 }
             );
+        Audio.start();
         Component.start();
-        Icon.start();
-        Menu.start();
-        Keys.start();
         Datatable.start();
+        File.start();
+        Icon.start();
+        Keys.start();
+        Menu.start();
+        Notifier.start();
+        Server.start();
         load('js/dinamic.js');
     }
 
-    static getSequence()
+    static nextSequence()
     {
         return ++this.sequence;
     }
@@ -3778,6 +4841,18 @@ class Page
     static onresize()
     {
 
+    }
+
+    static getZindex(type)
+    {
+        var i;
+        for (i in this.layers)
+        {
+            if (this.layers[i] == type)
+            {
+                return parseInt(i);
+            }
+        }
     }
 }
 
