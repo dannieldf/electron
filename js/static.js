@@ -127,11 +127,19 @@ class Component
                 }
                 break;
             case 'attributes':
-                if (have(value))
+                for (i in value)
                 {
-                    for (i in value)
+                    if (value[i] === false || value[i] === null || value[i] === '')
                     {
-                        this.element.setAttribute(Format.attribute(i), value[i]);
+                        this.element.removeAttribute(Format.attribute(i));
+                    }
+                    else
+                    {
+                        this.element.setAttribute
+                        (
+                            Format.attribute(i), 
+                            value[i] === true ? '' : value[i]
+                        );
                     }
                 }
                 break;
@@ -160,7 +168,18 @@ class Component
 
     setAttribute(key, value)
     {
-        this.element.setAttribute(Format.attribute(key), value);
+        if (value === false || value === null || value === '')
+        {
+            this.element.removeAttribute(Format.attribute(key));
+        }
+        else
+        {
+            this.element.setAttribute
+            (
+                Format.attribute(key), 
+                value === true ? '' : value
+            );
+        }
         if (this.changedPosition())
         {
             this.onposition();
@@ -192,16 +211,7 @@ class Component
                 component
             );
         }
-        if (!component instanceof Component)
-        {
-            Error
-            (
-                str.component['invalid_component'], 
-                'Component', 
-                'append', 
-                component
-            );
-        }
+        Component.validate(component);
         this.element.appendChild(component.element);
         this.components.push(component);
         component.parent = this;
@@ -210,26 +220,8 @@ class Component
     insertBefore(new_component, existing_component)
     {
         var i;
-        if (!new_component instanceof Component)
-        {
-            Error
-            (
-                str.component['invalid_component'], 
-                'Component', 
-                'insertBefore', 
-                new_component
-            );
-        }
-        if (!existing_component instanceof Component)
-        {
-            Error
-            (
-                str.component['invalid_component'], 
-                'Component', 
-                'insertBefore', 
-                existing_component
-            );
-        }
+        Component.validate(new_component);
+        Component.validate(existing_component);
         for (i in this.components)
         {
             if (this.components[i] == new_component)
@@ -257,16 +249,7 @@ class Component
     removeChild(component)
     {
         var i;
-        if (!component instanceof Component)
-        {
-            Error
-            (
-                str.component['invalid_component'], 
-                'Component', 
-                'removeChild', 
-                component
-            );
-        }
+        Component.validate(component);
         for (i in this.components)
         {
             if (this.components[i] == component)
@@ -324,6 +307,7 @@ class Component
     isParentOf(component)
     {
         var i;
+        Component.validate(component);
         for (i in this.components)
         {
             if (this.components[i] == component)
@@ -434,6 +418,24 @@ class Component
                 };
     }
 
+    checkPosition() // para usar nos filhos apos mudar algum atributo especifico
+    {
+        if (this.changedPosition())
+        {
+            this.onposition();
+            this.updatePosition();
+            Component.repositionAll(this);
+        }
+    }
+
+    static validate(component)
+    {
+        if (!component instanceof Component)
+        {
+            Error(str.component['invalid_component']);
+        }
+    }
+
     static repositionAll(triggerComponent = null)
     {
         var i;
@@ -509,6 +511,7 @@ class Audio extends Component
     constructor(parameters = {})
     {
         var i;
+        super({node: 'audio'});
         parameters =
             {
                 ...Audio.defaults,
@@ -531,7 +534,6 @@ class Audio extends Component
                 break;
             case 'sources_by_type':
                 j = 0;
-                super.set('content', this.error_message);
                 for (i in value)
                 {
                     this.append
@@ -550,13 +552,17 @@ class Audio extends Component
                         )
                     );
                 }
+                this.element.appendChild
+                (
+                    document.createTextNode(this.error_message)
+                );
                 break;
             default:
-                super.set(i, value);
+                super.set(key, value);
         }
     }
 
-    start()
+    static start()
     {
         str.audio =
             {
@@ -1755,7 +1761,10 @@ class File extends Component
         {
             accept: '',
             multiple: false,
-            files: []
+            files: [],
+            listing_max_height: 200,
+            image_max_height: 150,
+            video_max_height: 500
         };
 
     accept = null;
@@ -1763,6 +1772,12 @@ class File extends Component
     multiple = null;
 
     files = null;
+
+    list_max_height;
+
+    image_max_height;
+
+    video_max_height;
 
     constructor(parameters)
     {
@@ -1781,8 +1796,8 @@ class File extends Component
                     },
                     attributes:
                     {
-                        onchange: 'Component.get(' + this.index + ').change();',
-                        type: 'file'
+                        type: 'file',
+                        onchange: 'Component.get(' + this.index + ').change();'
                     }
                 }
             )
@@ -1831,7 +1846,7 @@ class File extends Component
 
     set (key, value)
     {
-        var i;
+        var i, component;
         switch (key)
         {
             case 'accept':
@@ -1867,6 +1882,18 @@ class File extends Component
                     );
                 }
                 break;
+            case 'listing_max_height':
+                this.list_max_height = value;
+                component = this.getComponent('listing');
+                if (component)
+                {
+                    component.setStyle('max_height', value);
+                }
+                break;
+            case 'image_max_height':
+            case 'video_max_height':
+                this[key] = value;
+                break;
             default:
                 super.set(key, value);
         }
@@ -1883,7 +1910,7 @@ class File extends Component
 
     add(from_client, file_data, trashed)
     {
-        var listing, component, index;
+        var listing, component, index, info_icon, menu_info_items, component_preview;
         index = Page.nextSequence();
         if (trashed)
         {
@@ -1895,48 +1922,18 @@ class File extends Component
             {
                 this.clear();
             }
-            if (file_data.type.match(/^image\/.*/))
-            {
-                component =
-                    new Component
-                    (
+            component =
+                new Component
+                (
+                    {
+                        content: file_data.name,
+                        style:
                         {
-                            node: 'img',
-                            style:
-                            {
-                                max_height: '200px',
-                                max_width: '200px',
-                                box_sizing: 'border-box',
-                                border: '0',
-                                margin: '0',
-                                cursor: 'pointer'
-                            }
+                            text_align: 'left'
                         }
-                    );
-            }
-            else if (file_data.type.match(/^video\/.*/))
-            {
-                component = new Video();
-
-            }
-            else if (file_data.type.match(/^audio\/.*/))
-            {
-                component = new Audio();
-            }
-            else
-            {
-                component =
-                    new Component
-                    (
-                        {
-                            content: file_data.name,
-                            style:
-                            {
-                                text_align: 'left'
-                            }
-                        }
-                    );
-            }
+                    }
+                );
+            listing = this.getComponent('listing');
             if (!have(listing))
             {
                 listing =
@@ -1946,14 +1943,28 @@ class File extends Component
                             nickname: 'listing',
                             style:
                             {
-                                overflow: 'auto',
-                                max_height: '200px',
-                                margin_top: '5px'
+                                max_height: this.list_max_height + 'px',
+                                box_sizing: 'border-box',
+                                margin_top: '5px',
+                                overflow: 'auto'
                             }
                         }
                     );
                 this.append(listing);
             }
+            info_icon =
+                new Icon
+                (
+                    {
+                        type: 'info',
+                        style: 
+                        {
+                            cursor: 'pointer',
+                            user_select: 'none',
+                            color: styles['text_color_normal']
+                        }
+                    }
+                );
             listing.append
             (
                 new Component
@@ -1992,9 +2003,12 @@ class File extends Component
                             new Component
                             (
                                 {
+                                    nickname: 'file_container_' + index,
                                     style:
                                     {
-                                        width: '100%'
+                                        width: '100%',
+                                        padding: '0 5px',
+                                        box_sizing: 'border-box'
                                     },
                                     components:
                                     [
@@ -2002,18 +2016,7 @@ class File extends Component
                                     ]
                                 }
                             ),
-                            new Icon
-                            (
-                                {
-                                    type: 'info',
-                                    style: 
-                                    {
-                                        cursor: 'pointer',
-                                        user_select: 'none',
-                                        color: styles['text_color_normal']
-                                    }
-                                }
-                            ),
+                            info_icon,
                             new Icon
                             (
                                 {
@@ -2031,6 +2034,62 @@ class File extends Component
                 )
             );
             component.set('nickname', 'file_' + index);
+            menu_info_items = 
+                [
+                    new Table
+                    (
+                        {
+                            parse: true,
+                            rows: 
+                                [
+                                    [
+                                        '<b>' + str.file['size'] + ':</b>', 
+                                        file_data.size
+                                    ],
+                                    [
+                                        '<b>' + str.file['mime_type'] + ':</b>', 
+                                        file_data.type
+                                    ],
+                                    [
+                                        '<b>' + str.file['last_modified'] + ':</b>', 
+                                        (new Date(file_data.lastModified)).toLocaleDateString()
+                                    ]
+                                ]
+                        }
+                    )
+                ];
+            if (['audio', 'image', 'video'].includes(Format.mime(file_data.type)))
+            {
+                component_preview = 
+                    new Component
+                    (
+                        {
+                            components:
+                            [
+                                new Component
+                                (
+                                    {
+                                        style:
+                                        {
+                                            font_style: 'italic',
+                                            color: styles['text_color_discreet']
+                                        },
+                                        content: str.file['loading']
+                                    }
+                                )
+                            ]
+                        }
+                    );
+                menu_info_items.push(component_preview);
+            }
+            new Menu
+            (
+                {
+                    component: info_icon,
+                    items: menu_info_items,
+                    style: {padding: '10px'}
+                }
+            );
             this.files.push
             (
                 {
@@ -2040,7 +2099,7 @@ class File extends Component
                     trashed: trashed
                 }
             );
-            return index;
+            return isset(component_preview) ? component_preview.index : null;
         }
     }
 
@@ -2050,7 +2109,7 @@ class File extends Component
         listing = this.getComponent('listing');
         if (this.files.length == 1)
         {
-            this.removeChild('listing');
+            listing.destroy();
         }
         else
         {
@@ -2201,47 +2260,113 @@ class File extends Component
 
     processUpload(files)
     {
-        var i, file_reader, component_index;
+        var i, file_reader, component_preview_index, type;
+        file_reader = {};
         for (i = 0; i < files.length; i++)
         {
-            if (typeof files[i] != 'object')
-            {
-                continue;
-            }
-            component_index = 
+            component_preview_index = 
                 this.add
                 (
                     true,
                     files[i],
                     false
                 );
-            if (files[i].type.match(/^[audio|image|video]\/.*/))
+            type = Format.mime(files[i].type);
+            if (['audio', 'image', 'video'].includes(type))
             {
-                file_reader = new FileReader();
-                file_reader.onload =
+                file_reader[i] = new FileReader();
+                file_reader[i].onload =
                     new Function
                     (
-                        "Component.get(" + this.index + ").srcLoad(" + component_index + ", '" + files[i].type + "');"
+                        'event',
+                        'index = ' + this.index,
+                        'component_preview_index = ' + component_preview_index,
+                        'mime = "' + files[i].type + '"',
+                        "Component.get(index).srcLoad(component_preview_index, mime);"
                     );
-                file_reader.readAsDataURL(files[i]);
+                file_reader[i].readAsDataURL(files[i]);
             }
         };
     }
 
-    srcLoad(component_index, type)
+    srcLoad(component_preview_index, mime)
     {
-        var component, parameters;
-        component = this.getComponent('file_' + component_index);
-        if (type.match(/^image\/.*/))
+        var component, type, src;
+        type = Format.mime(mime);
+        if (type == 'image')
         {
-            component.setAttribute('scr', event.target.result);
+            component =
+                new Component
+                (
+                    {
+                        node: 'img',
+                        attributes:
+                        {
+                            src: event.target.result
+                        },
+                        style:
+                        {
+                            max_height: this.image_max_height + 'px',
+                            max_width: '100%',
+                            box_sizing: 'border-box',
+                            border: '0',
+                            margin: '0',
+                            cursor: 'pointer'
+                        }
+                    }
+                );
         }
-        else
+        else 
         {
-            parameters = {};
-            parameters[type] = event.target.result;
-            component.set('sources_by_type', parameters);
+            src = {};
+            src[mime] = event.target.result;
+            if (type == 'video')
+            {
+                component = 
+                    new Video
+                    (
+                        {
+                            sources_by_type: src,
+                            style:
+                            {
+                                max_width: '100%',
+                                max_height: this.video_max_height + 'px'
+                            },
+                            attributes:
+                            {
+                                controls: true
+                            }
+                        }
+                    );
+
+            }
+            else if (type == 'audio')
+            {
+                component = 
+                    new Audio
+                    (
+                        {
+                            sources_by_type: src,
+                            style:
+                            {
+                                height: '25px',
+                                width: '100%'
+                            },
+                            attributes:
+                            {
+                                'controls': true
+                            }
+                        }
+                    );
+            }
         }
+        Component.get(component_preview_index).set
+        (
+            'components',
+            [
+                component
+            ]
+        );
     }
 
     getValue()
@@ -2258,8 +2383,12 @@ class File extends Component
                 clear: 'limpar',
                 trash: 'lixeira',
                 no_file: 'nenhum arquivo localizado',
-                only_one_allowed: 'envie  somente um arquivo'
-            }
+                only_one_allowed: 'envie  somente um arquivo',
+                size: 'Tamanho',
+                mime_type: 'Tipo (mime)',
+                last_modified: 'Última alteração',
+                loading: 'carregando o arquivo...'
+            };
     }
 }
 
@@ -2298,6 +2427,11 @@ class Format
     static number(value)
     {
         return value.toLocaleString();
+    }
+
+    static mime(mime)
+    {
+        return mime.split('/')[0];
     }
 }
 
@@ -2843,7 +2977,11 @@ class Keys
 
     static keyup()
     {
-        Keys.pressed.splice(Keys.pressed.indexOf(event.keyCode), 1);
+        Keys.pressed.splice
+        (
+            Keys.pressed.indexOf(event.keyCode), 
+            1
+        );
     }
 
     static getCode(key)
@@ -3530,6 +3668,7 @@ class Menu
     {
         if (!this.opened)
         {
+            Menu.closeAll();
             this.opened = true;
             Page.body.append(this.getContainer());
             this.position();
@@ -3650,6 +3789,70 @@ class Menu
     static start()
     {
         document.addEventListener('click', Menu.closeAll);
+    }
+}
+
+class Recordset
+{
+    static defaults =
+    {
+        fields: [],
+        records: []
+    };
+
+    fields;
+
+    records;
+
+    length;
+
+    constructor(parameters)
+    {
+        var i;
+        parameters = 
+            {
+                ...Recordset.defaults,
+                ...parameters
+            };
+        for (i in parameters)
+        {
+            this.set(i, parameters[i]);
+        }
+    }
+
+    set(key, value)
+    {
+        switch (key)
+        {
+            case 'fields':
+                this.fields = value;
+                break;
+            case 'records':
+                this.records = value;
+                this.length = value.length;
+                break;
+        }
+    }
+
+    getData(field, row)
+    {
+        return this.records[row][this.fields.indexOf(field)];
+    }
+
+    getRecord(row)
+    {
+        var i, object;
+        object = {};
+        for (i in this.fields)
+        {
+            object[this.fields[i]] = this.records[row][i];
+        }
+        return object;
+    }
+
+    static select()
+    {
+
     }
 }
 
@@ -3874,7 +4077,8 @@ class Table extends Component
                 {
                     border_collapse: 'collapse'
                 },
-            rows: []
+            rows: [],
+            td_attributes: null
         };
 
     constructor(parameters)
@@ -3890,7 +4094,7 @@ class Table extends Component
 
     set(key, value)
     {
-        var i, j, tr, td;
+        var i, j, tr, td, record;
         switch (key)
         {
             case 'node':
@@ -3899,7 +4103,14 @@ class Table extends Component
                 this.clear();
                 for (i in value)
                 {
-                    tr = new Component({node: 'tr'});
+                    tr = 
+                        new Component
+                        (
+                            {
+                                nickname: 'row_' + i,
+                                node: 'tr'
+                            }
+                        );
                     for (j in value[i])
                     {
                         td =
@@ -3907,33 +4118,62 @@ class Table extends Component
                             (
                                 {
                                     ...
-                                        Format.isString(value[i][j]) ?
+                                        value[i][j] instanceof Component ?
+                                            {
+                                                components: [value[i][j]]
+                                            }
+                                        :
                                             {
                                                 content: value[i][j],
                                                 parse: this.parse
-                                            }
-                                        :
-                                            value[i][j],
+                                            },
                                     ...
-                                        {node: 'td'}
+                                        {
+                                            nickname: 'col_' + j,
+                                            node: 'td'
+                                        }
                                 }
                             );
                         tr.append(td);
                     }
                     this.append(tr);
                 }
-                if (this.changedPosition())
+                this.checkPosition();
+                break;
+            case 'td_attributes':
+                if (value)
                 {
-                    this.onposition();
-                    this.updatePosition();
-                    Component.repositionAll(this);
+                    for (i = 0; i < value.length; i++)
+                    {
+                        record = value.getRecord(i);
+                        for (j in record.attributes)
+                        {
+                            this.getCol(record.row, record.col).setAttribute
+                            (
+                                j,
+                                record.attributes[j]
+                            );
+                        }
+                    }
                 }
+                this.checkPosition();
                 break;
             default:
                 super.set(key, value);
         }
     }
 
+    getRow(row)
+    {
+        return this.getComponent('row_' + row);
+    }
+
+    getCol(row, col)
+    {
+        return this.getComponent('row_' + row, 'col_' + col);
+    }
+
+    /*
     setRow(row, key, value)
     {
         this.components[row].set(key, value);
@@ -3955,6 +4195,7 @@ class Table extends Component
             }
         }
     }
+    */
 }
 
 class Tabsheet extends Component
@@ -4546,6 +4787,7 @@ class Video extends Component
     constructor(parameters)
     {
         var i;
+        super({node: 'video'});
         parameters =
             {
                 ...Video.defaults,
@@ -4567,7 +4809,6 @@ class Video extends Component
                 this.error_message = value;
                 break;
             case 'sources_by_type':
-                super.set('content', this.error_message);
                 j = 0;
                 for (i in value)
                 {
@@ -4587,13 +4828,17 @@ class Video extends Component
                         )
                     );
                 }
+                this.element.appendChild
+                (
+                    document.createTextNode(this.error_message)
+                );
                 break;
             default:
-                super.set(i, value);
+                super.set(key, value);
         }
     }
 
-    start()
+    static start()
     {
         str.video =
             {
@@ -4616,7 +4861,7 @@ class Page
             background_color_normal: '#eff0f4',
             text_color_highlight: '#e35150',
             background_color_highlight: '#fdeeee',
-            text_color_discreet: '#888888',
+            text_color_discreet: '#cccccc',
             background_color_discreet: '#eeeeee',
             background_color_title: '#dfe1e8',
             button_primary_color: '#ffffff',
@@ -4642,6 +4887,14 @@ class Page
             input_radius: '3px'
         };
 
+    static str =
+        {
+            app:
+            {
+                loading: 'carregando...'
+            }
+        };
+
     static img =
         {
         };
@@ -4659,7 +4912,7 @@ class Page
             'tips'
         ];
 
-    static start()
+    static start(app_script = '')
     {
         window.styles = Object.assign({}, Page.styles);
         window.str = Object.assign({}, Page.str);
@@ -4830,7 +5083,31 @@ class Page
         Menu.start();
         Notifier.start();
         Server.start();
-        load('js/dinamic.js');
+        Video.start();
+        if (app_script)
+        {
+            load(app_script);
+        }
+        else
+        {
+            Page.body.append
+            (
+                new Component
+                (
+                    {
+                        content: 'informe um arquivo javascript com o código da aplicação na última linha de  static.js',
+                        style:
+                        {
+                            padding: '50px',
+                            text_align: 'center',
+                            margin: '50px',
+                            border: 'solid 1px #ccc',
+                            background_color: '#eeeeee'
+                        }
+                    }
+                )
+            );
+        }
     }
 
     static nextSequence()
@@ -4856,4 +5133,5 @@ class Page
     }
 }
 
-Page.start();
+//Page.start('js/dinamic.js');
+Page.start('js/teste.js');
