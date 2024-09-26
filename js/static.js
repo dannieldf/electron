@@ -1026,19 +1026,7 @@ class Datatable extends Component
         {
             cols.push
             (
-                Format.isString(this.columns[i]) ?
-                    {
-                        content: this.columns[i],
-                        parse: true,
-                        style:
-                            {
-                                font_weight: 'bold',
-                                text_align: 'center',
-                                user_select: 'none'
-                            }
-                    }
-                :
-                    this.columns[i]
+                this.columns[i]
             );
         }
         rows.push(cols);
@@ -1049,17 +1037,7 @@ class Datatable extends Component
             {
                 cols.push
                 (
-                    Format.isString(this.rows[i][j]) ?
-                        {
-                            content: this.rows[i][j],
-                            parse: false,
-                            style:
-                                {
-                                    text_align: 'center'
-                                }
-                        }
-                    :
-                        this.rows[i][j]
+                    this.rows[i][j]
                 );
             }
             rows.push(cols);
@@ -1071,7 +1049,9 @@ class Datatable extends Component
                 i == 0 ?
                     {
                         color: styles['datatable_head_color'],
-                        background_color: styles['datatable_head_bgcolor']
+                        background_color: styles['datatable_head_bgcolor'],
+                        font_weight: 'bold',
+                        user_select: 'none'
                     }
                 :
                     this.toggleRowColor ?
@@ -1091,7 +1071,7 @@ class Datatable extends Component
                             background_color: styles['datatable_row_bgcolor_1']
                         }
                 ;
-            table.setRow(i, 'style', style);
+            table.getRow(i).set('style', style);
         }
     }
 
@@ -1759,12 +1739,116 @@ class File extends Component
 {
     static defaults =
         {
+            onadd: null,
+            onremove: null,
             accept: '',
             multiple: false,
             files: [],
+            show_files: true,
             listing_max_height: 200,
             image_max_height: 150,
             video_max_height: 500
+        };
+
+    static preview =
+        {
+            audio:
+                function(file)
+                {
+                    var src, component;
+                    src = {};
+                    src[file.file_data.type] = file.src;
+                    component = 
+                        new Audio
+                        (
+                            {
+                                sources_by_type: src,
+                                style:
+                                {
+                                    height: '25px'
+                                },
+                                attributes:
+                                {
+                                    controls: true
+                                }
+                            }
+                        );
+                    return component;
+                },
+            image:
+                function(file)
+                {
+                    var component;
+                    component =
+                        new Component
+                        (
+                            {
+                                node: 'img',
+                                attributes:
+                                {
+                                    src: file.src
+                                },
+                                style:
+                                {
+                                    max_height: this.image_max_height + 'px',
+                                    max_width: '100%',
+                                    box_sizing: 'border-box',
+                                    border: '0',
+                                    margin: '0',
+                                    cursor: 'pointer'
+                                }
+                            }
+                        );
+                    return component;
+                },
+            text:
+                function(file)
+                {
+                    var component;
+                    component =
+                        new Component
+                        (
+                            {
+                                node: 'pre',
+                                content: file.src,
+                                parse: false,
+                                style:
+                                {
+                                    font_size: 'small',
+                                    text_align: 'left',
+                                    padding: '10px',
+                                    max_width: '500px',
+                                    max_height: '500px',
+                                    overflow: 'auto'
+                                }
+                            }
+                        )
+                    return component;
+                },
+            video:
+                function(file)
+                {
+                    var src, component;
+                    src = {};
+                    src[file.file_data.type] = file.src;
+                    component = 
+                        new Video
+                        (
+                            {
+                                sources_by_type: src,
+                                style:
+                                {
+                                    max_width: '100%',
+                                    max_height: this.video_max_height + 'px'
+                                },
+                                attributes:
+                                {
+                                    controls: true
+                                }
+                            }
+                        );
+                    return component;
+                }
         };
 
     accept = null;
@@ -1773,11 +1857,19 @@ class File extends Component
 
     files = null;
 
+    show_files = null;
+
     list_max_height;
 
     image_max_height;
 
     video_max_height;
+
+    trash = [];
+
+    trash_menu = null;
+
+    trash_list = null;
 
     constructor(parameters)
     {
@@ -1797,7 +1889,7 @@ class File extends Component
                     attributes:
                     {
                         type: 'file',
-                        onchange: 'Component.get(' + this.index + ').change();'
+                        onchange: 'Component.get(' + this.index + ').inputChange();'
                     }
                 }
             )
@@ -1825,10 +1917,10 @@ class File extends Component
                         ondragover: 'event.preventDefault();',
                         ondragenter: 'Component.get(' + this.index + ').dragenter();',
                         ondragleave: 'Component.get(' + this.index + ').dragleave();',
-                        ondrop: 'Component.get(' + this.index + ').drop();',
-                        onmouseover: 'Component.get(' + this.index + ').mouseover();',
-                        onmouseout: 'Component.get(' + this.index + ').mouseout();',
-                        onclick: 'Component.get(' + this.index + ').click();'
+                        ondrop: 'Component.get(' + this.index + ').dragdrop();',
+                        onmouseover: 'Component.get(' + this.index + ').dragareaMouseover();',
+                        onmouseout: 'Component.get(' + this.index + ').dragareaMouseout();',
+                        onclick: 'Component.get(' + this.index + ').dragareaClick();'
                     }
                 }
             )
@@ -1838,6 +1930,7 @@ class File extends Component
                 ...File.defaults,
                 ...parameters
             };
+        this.show_files = parameters.show_files ? true : false;
         for (i in parameters)
         {
             this.set(i, parameters[i]);
@@ -1849,6 +1942,10 @@ class File extends Component
         var i, component;
         switch (key)
         {
+            case 'onadd':
+            case 'onremove':
+                this[key] = typeof value == 'function' ? value : null;
+                break;
             case 'accept':
                 this.accept = value;
                 this.getComponent('input').setAttribute
@@ -1878,8 +1975,46 @@ class File extends Component
                     (
                         false,
                         value[i],
-                        false
+                        false,
+                        null
                     );
+                }
+                break;
+            case 'show_files':
+                value = value ? true : false;
+                if (this.show_files != value)
+                {
+                    this.show_files = value;
+                    if (this.show_files)
+                    {
+                        this.showFiles(this.files);
+                    }
+                    else
+                    {
+                        for (i in this.files)
+                        {
+                            if (this.files[i].menu)
+                            {
+                                this.files[i].menu.destroy();
+                                this.files[i].menu = null;
+                            }
+                            if (this.files[i].component_preview)
+                            {
+                                this.files[i].component_preview.destroy();
+                                this.files[i].component_preview = null;
+                            }
+                        }
+                        component = this.getComponent('listing');
+                        if (component)
+                        {
+                            component.destroy();
+                        }
+                        component = this.getComponent('options');
+                        if (component)
+                        {
+                            component.destroy();
+                        }
+                    }
                 }
                 break;
             case 'listing_max_height':
@@ -1899,256 +2034,305 @@ class File extends Component
         }
     }
 
-    clear()
+    add(from_client, file_data, is_trashed, src)
     {
-        var i;
+        var file;
+        file =
+            {
+                index: Page.nextSequence(),
+                from_client: from_client, 
+                file_data: file_data,
+                src: src,
+                menu: null,
+                component_preview: null
+            };
+        if (!this.multiple)
+        {
+            this.clean();
+        }
+        this.files.push(file);
+        if (this.show_files)
+        {
+            this.showFiles([file]);
+        }
+        if (is_trashed)
+        {
+            this.remove(file.index);
+        }
+        return file;
+    }
+
+    remove(file_index)
+    {
+        var i, j, file, in_trash, listing, options, clean, trash;
         for (i in this.files)
         {
-            this.remove(this.files[i].index);
-        }
-    }
-
-    add(from_client, file_data, trashed)
-    {
-        var listing, component, index, info_icon, menu_info_items, component_preview;
-        index = Page.nextSequence();
-        if (trashed)
-        {
-
-        }
-        else
-        {
-            if (!this.multiple)
+            if (this.files[i].index == file_index)
             {
-                this.clear();
-            }
-            component =
-                new Component
-                (
+                file = this.files.splice(i, 1)[0];
+                in_trash = false;
+                for (j in this.trash)
+                {
+                    if (this.trash[j].file_data == file.file_data)
                     {
-                        content: file_data.name,
-                        style:
-                        {
-                            text_align: 'left'
-                        }
+                        in_trash = true;
+                        break;
                     }
-                );
+                }
+                if (!in_trash)
+                {
+                    this.trash.push(file);
+                }
+                break;
+            }
+        }
+        if (this.show_files)
+        {
             listing = this.getComponent('listing');
-            if (!have(listing))
-            {
-                listing =
-                    new Component
-                    (
-                        {
-                            nickname: 'listing',
-                            style:
-                            {
-                                max_height: this.list_max_height + 'px',
-                                box_sizing: 'border-box',
-                                margin_top: '5px',
-                                overflow: 'auto'
-                            }
-                        }
-                    );
-                this.append(listing);
-            }
-            info_icon =
-                new Icon
-                (
-                    {
-                        type: 'info',
-                        style: 
-                        {
-                            cursor: 'pointer',
-                            user_select: 'none',
-                            color: styles['text_color_normal']
-                        }
-                    }
-                );
-            listing.append
-            (
-                new Component
-                (
-                    {
-                        nickname: 'file_row_' + index,
-                        attributes:
-                        {
-                            onmouseover: 
-                                'this.style.backgroundColor = "' + styles['background_color_highlight'] + '";',
-                            onmouseout: 
-                                'this.style.backgroundColor = "initial";'
-                        },
-                        style:
-                        {
-                            padding: '10px',
-                            display: 'flex',
-                            align_items: 'flex-start',
-                            justify_content: 'space-between',
-                            overflow: 'auto'
-                        },
-                        components:
-                        [
-                            new Component
-                            (
-                                {
-                                    nickname: 'number',
-                                    content: (this.files.length + 1) + '.',
-                                    style:
-                                    {
-                                        font_weight: 'bold',
-                                        margin_right: '4px'
-                                    }
-                                }
-                            ),
-                            new Component
-                            (
-                                {
-                                    nickname: 'file_container_' + index,
-                                    style:
-                                    {
-                                        width: '100%',
-                                        padding: '0 5px',
-                                        box_sizing: 'border-box'
-                                    },
-                                    components:
-                                    [
-                                        component
-                                    ]
-                                }
-                            ),
-                            info_icon,
-                            new Icon
-                            (
-                                {
-                                    type: 'delete',
-                                    style: 
-                                    {
-                                        cursor: 'pointer',
-                                        user_select: 'none',
-                                        color: styles['text_color_highlight']
-                                    }
-                                }
-                            )
-                        ]
-                    }
-                )
-            );
-            component.set('nickname', 'file_' + index);
-            menu_info_items = 
-                [
-                    new Table
-                    (
-                        {
-                            parse: true,
-                            rows: 
-                                [
-                                    [
-                                        '<b>' + str.file['size'] + ':</b>', 
-                                        file_data.size
-                                    ],
-                                    [
-                                        '<b>' + str.file['mime_type'] + ':</b>', 
-                                        file_data.type
-                                    ],
-                                    [
-                                        '<b>' + str.file['last_modified'] + ':</b>', 
-                                        (new Date(file_data.lastModified)).toLocaleDateString()
-                                    ]
-                                ]
-                        }
-                    )
-                ];
-            if (['audio', 'image', 'video'].includes(Format.mime(file_data.type)))
-            {
-                component_preview = 
-                    new Component
-                    (
-                        {
-                            components:
-                            [
-                                new Component
-                                (
-                                    {
-                                        style:
-                                        {
-                                            font_style: 'italic',
-                                            color: styles['text_color_discreet']
-                                        },
-                                        content: str.file['loading']
-                                    }
-                                )
-                            ]
-                        }
-                    );
-                menu_info_items.push(component_preview);
-            }
-            new Menu
-            (
-                {
-                    component: info_icon,
-                    items: menu_info_items,
-                    style: {padding: '10px'}
-                }
-            );
-            this.files.push
-            (
-                {
-                    index: index,
-                    from_client: from_client, 
-                    file_data: file_data,
-                    trashed: trashed
-                }
-            );
-            return isset(component_preview) ? component_preview.index : null;
-        }
-    }
-
-    remove(index)
-    {
-        var i, j, listing;
-        listing = this.getComponent('listing');
-        if (this.files.length == 1)
-        {
-            listing.destroy();
-        }
-        else
-        {
-            listing.getComponent('file_row_' + index).destroy();
+            listing.getComponent('file_row_' + file_index).destroy();
             j = 0;
             for (i in listing.components)
             {
                 listing.components[i].getComponent('number').set('content', ++j + '.');
             }
-        }
-        for (i in this.files)
-        {
-            if (this.files[i].index == index)
+            options = this.getOptionsComponent();
+            switch (this.files.length)
             {
-                this.files.splice(i, 1);
-                break;
+                case 0:
+                    listing.destroy();
+                    break;
+                case 1:
+                    clean = options.getComponent('clean');
+                    if (clean)
+                    {
+                        clean.destroy();
+                    }
+            }
+            trash = options.getComponent('trash');
+            if (!trash)
+            {
+                trash =
+                    new Component
+                    (
+                        {
+                            nickname: 'trash',
+                            style:
+                            {
+                                color: styles['text_color_normal'],
+                                text_align: 'right',
+                                cursor: 'pointer',
+                                user_select: 'none',
+                                display: 'flex',
+                                align_items: 'center',
+                                justify_content: 'flex-end'
+                            },
+                            components:
+                            [
+                                new Component({content: str.file['trash'] + '('}),
+                                new Component({nickname: 'qtd'}),
+                                new Component({content: ') '}),
+                                new Icon({type: 'delete'})
+                            ],
+                            attributes:
+                            {
+                                onmouseover: 'this.style.color = "' + styles['text_color_highlight'] + '"',
+                                onmouseout: 'this.style.color = "' + styles['text_color_normal'] + '"'
+                            }
+                        }
+                    );
+                options.append(trash);
+                this.trash_menu =
+                    new Menu
+                    (
+                        {
+                            component: trash,
+                            items: new Function('return Component.get(' + this.index + ').getTrashMenuItems();')
+                        }
+                    );
+            }
+            options.setStyle
+            (
+                'justify_content', 
+                options.getComponent('clean') ? 
+                    'space-between'
+                : 
+                    'flex-end'
+            );
+            trash.getComponent('qtd').set('content', this.trash.length);
+        }
+    }
+
+    deleteClick(file_index)
+    {
+        var i;
+        this.remove(file_index);
+        if (typeof this.onremove == 'function')
+        {
+            for (i in this.trash)
+            {
+                if (this.trash[i].index == file_index)
+                {
+                    this.onremove
+                    (
+                        {
+                            files: [this.trash[i]], 
+                            file_instance: this
+                        }
+                    );
+                    break;
+                }
+            }
+        }
+
+    }
+
+    clean()
+    {
+        var i, files;
+        if (this.files.length)
+        {
+            files = [];
+            while (this.files.length)
+            {
+                files.push(this.files[0]);
+                this.remove(this.files[0].index);
+            }
+            if (typeof this.onremove == 'function')
+            {
+                this.onremove
+                (
+                    {
+                        files: files,
+                        file_instance: this
+                    }
+                );
             }
         }
     }
 
-    choose()
+    cleanTrash()
     {
-
+        var options;
+        this.trash = [];
+        options = this.getComponent('options');
+        if (options.getComponent('clean'))
+        {
+            options.getComponent('trash').destroy();
+        }
+        else
+        {
+            options.destroy();
+        }
+        this.trash_menu.destroy();
+        this.trash_menu = null;
+        this.trash_list = null;
     }
 
-    change()
+    recover(file_index)
     {
+        var i, file;
+        for (i in this.trash)
+        {
+            if (this.trash[i].index == file_index)
+            {
+                file = this.trash.splice(i, 1)[0];
+                if (this.trash.length)
+                {
+                    this.getComponent('options', 'trash', 'qtd').set
+                    (
+                        'content', 
+                        this.trash.length
+                    );
+                    this.trash_list.getComponent('trash_item_' + file_index).destroy();
+                }
+                else
+                {
+                    this.getComponent('options', 'trash').destroy();
+                    this.trash_menu.destroy();
+                    this.trash_menu = null;
+                    this.trash_list = null;
+                }
+                file = 
+                    this.add
+                    (
+                        file.from_client, 
+                        file.file_data, 
+                        false,
+                        file.src
+                    );
+                return file.index;
+            }
+        }
+    }
+
+    recoverAll()
+    {
+        var i, files;
+        files = [];
+        for (i in this.trash)
+        {
+            files.push(this.trash[i]);
+        }
+        for (i in files)
+        {
+            this.recover(files[i].index);
+        }
+        if (typeof this.onadd == 'function')
+        {
+            this.onadd
+            (
+                {
+                    files: files,
+                    file_instance: this
+                }
+            );
+        }
+    }
+
+    trashItemClick(file_index)
+    {
+        var i;
+        file_index = this.recover(file_index);
+        if (typeof this.onadd == 'function')
+        {
+            for (i in this.files)
+            {
+                if (this.files[i].index == file_index)
+                {
+                    this.onadd
+                    (
+                        {
+                            files: [this.files[i]], 
+                            file_instance: this
+                        }
+                    );
+                    break;
+                }
+            }
+        }
+    }
+
+    inputChange()
+    {
+        var input;
+        input = this.getComponent('input');
+        if (!input.element.files.length)
+        {
+            return;
+        }
         this.processUpload
         (
-            this.getComponent('input').element.files
+            input.element.files
         );
+        input.element.value = null;
     }
 
-    click()
+    dragareaClick()
     {
         this.getComponent('input').element.click();
     }
 
-    mouseover()
+    dragareaMouseover()
     {
         this.getComponent('drag_area').setStyle
         (
@@ -2157,7 +2341,7 @@ class File extends Component
         );
     }
 
-    mouseout()
+    dragareaMouseout()
     {
         this.getComponent('drag_area').setStyle
         (
@@ -2166,7 +2350,7 @@ class File extends Component
         );
     }
 
-    highlight(on)
+    dragareaHighlight(on)
     {
         var drag_area;
         drag_area = this.getComponent('drag_area');
@@ -2200,20 +2384,21 @@ class File extends Component
 
     dragenter()
     {
-        this.highlight(true);
+        this.dragareaHighlight(true);
         event.preventDefault();
     }
 
     dragleave()
     {
-        this.highlight(false);
+        this.dragareaHighlight(false);
         event.preventDefault();
     }
 
-    drop()
+    dragdrop()
     {
+        var i, valid;
         event.preventDefault();
-        this.highlight(false);
+        this.dragareaHighlight(false);
         if
         (
             !isset(event) 
@@ -2230,12 +2415,15 @@ class File extends Component
             case 0:
                 Notifier.send
                 (
-                    new Component
-                    (
-                        {
-                            content: str.file['no_file']
-                        }
-                    )
+                    {
+                        component:
+                            new Component
+                            (
+                                {
+                                    content: str.file['no_file']
+                                }
+                            )
+                    }
                 );
                 return;
             case 1:
@@ -2245,34 +2433,68 @@ class File extends Component
                 {
                     Notifier.send
                     (
-                        new Component
-                        (
-                            {
-                                content: str.file['only_one_allowed']
-                            }
-                        )
+                        {
+                            component:
+                                new Component
+                                (
+                                    {
+                                        content: str.file['only_one_allowed']
+                                    }
+                                )
+                        }
                     );
                     return;
                 }
         }
-        this.processUpload(event.dataTransfer.files);
+        valid = true;
+        if (this.accept)
+        {
+            for (i = 0; i < event.dataTransfer.files.length; i++)
+            {
+                if 
+                (
+                    !File.validateMime
+                    (
+                        event.dataTransfer.files[i].type,
+                        event.dataTransfer.files[i].name,
+                        this.accept
+                    )
+                )
+                {
+                    valid = false;
+                    Notifier.send
+                    (
+                        {
+                            component: str.file['invalid_type'] + ': ' + event.dataTransfer.files[i].name,
+                            type: 'error'
+                        }
+                    );
+                }
+            }
+        }
+        if (valid)
+        {
+            this.processUpload(event.dataTransfer.files);
+        }
     }
 
     processUpload(files)
     {
-        var i, file_reader, component_preview_index, type;
+        var i, file_reader, file, type, files_result;
         file_reader = {};
+        files_result = [];
         for (i = 0; i < files.length; i++)
         {
-            component_preview_index = 
+            file = 
                 this.add
                 (
                     true,
                     files[i],
-                    false
+                    false,
+                    null
                 );
-            type = Format.mime(files[i].type);
-            if (['audio', 'image', 'video'].includes(type))
+            files_result.push(file);
+            if (File.hasPreview(file))
             {
                 file_reader[i] = new FileReader();
                 file_reader[i].onload =
@@ -2280,98 +2502,497 @@ class File extends Component
                     (
                         'event',
                         'index = ' + this.index,
-                        'component_preview_index = ' + component_preview_index,
-                        'mime = "' + files[i].type + '"',
-                        "Component.get(index).srcLoad(component_preview_index, mime);"
+                        'file_index = ' + file.index,
+                        'component_preview_index = ' + (this.show_files ? file.component_preview.index : 'null'),
+                        "Component.get(index).srcLoad(file_index, component_preview_index);"
                     );
-                file_reader[i].readAsDataURL(files[i]);
+                switch (File.getType(file))
+                {
+                    case 'audio':
+                    case 'image':
+                    case 'video':
+                        file_reader[i].readAsDataURL(files[i]);
+                        break;
+                    case 'text':
+                        file_reader[i].readAsText(files[i]);
+                        break;
+                }
             }
         };
+        if (typeof this.onadd == 'function')
+        {
+            this.onadd
+            (
+                {
+                    files: files_result, 
+                    file_instance: this
+                }
+            );
+        }
     }
 
-    srcLoad(component_preview_index, mime)
+    srcLoad(file_index, component_preview_index)
     {
-        var component, type, src;
-        type = Format.mime(mime);
-        if (type == 'image')
+        var i, file;
+        for (i in this.files)
+        {
+            if (this.files[i].index == file_index)
+            {
+                this.files[i].src = event.target.result;
+                file = this.files[i];
+                break;
+            }
+        }
+        if (this.show_files)
+        {
+            Component.get(component_preview_index).set
+            (
+                'components',
+                [
+                    this.preview(file)
+                ]
+            );
+        }
+    }
+
+    preview(file)
+    {
+        var type, component_preview;
+        type = file.file_data.type.split('/')[0];
+        component_preview = 
+            File.preview[type].call
+            (
+                this, 
+                file
+            );
+        return component_preview;
+    }
+
+    showFiles(files)
+    {
+        var i, number, options, listing, preview_icon, component, components, clean, trash;
+        listing = this.getComponent('listing');
+        if (!have(listing))
+        {
+            listing =
+                new Component
+                (
+                    {
+                        nickname: 'listing',
+                        style:
+                        {
+                            max_height: this.list_max_height + 'px',
+                            box_sizing: 'border-box',
+                            margin_top: '5px',
+                            overflow: 'auto'
+                        }
+                    }
+                );
+            options = this.getComponent('options');
+            if (options)
+            {
+                this.insertBefore(listing, options);
+            }
+            else
+            {
+                this.append(listing);
+            }
+        }
+        number = this.files.length;
+        for (i in files)
         {
             component =
                 new Component
                 (
                     {
-                        node: 'img',
-                        attributes:
-                        {
-                            src: event.target.result
-                        },
+                        nickname: 'file_' + files[i].index,
+                        content: files[i].file_data.name,
                         style:
                         {
-                            max_height: this.image_max_height + 'px',
-                            max_width: '100%',
-                            box_sizing: 'border-box',
-                            border: '0',
-                            margin: '0',
-                            cursor: 'pointer'
+                            text_align: 'left'
                         }
                     }
                 );
-        }
-        else 
-        {
-            src = {};
-            src[mime] = event.target.result;
-            if (type == 'video')
+            preview_icon =
+                new Icon
+                (
+                    {
+                        type: 'remove_red_eye',
+                        style: 
+                        {
+                            cursor: 'pointer',
+                            user_select: 'none',
+                            color: styles['text_color_normal']
+                        }
+                    }
+                );
+                
+            if (File.hasPreview(files[i]))
             {
-                component = 
-                    new Video
+                files[i].component_preview = 
+                    new Component
                     (
                         {
-                            sources_by_type: src,
                             style:
                             {
-                                max_width: '100%',
-                                max_height: this.video_max_height + 'px'
+                                display: 'flex',
+                                align_items: 'center',
+                                justify_content: 'center',
+                                padding: '10px'
                             },
-                            attributes:
-                            {
-                                controls: true
-                            }
+                            components:
+                            [
+                                files[i].src ?
+                                    this.preview(files[i])
+                                :
+                                    new Component
+                                    (
+                                        {
+                                            style:
+                                            {
+                                                font_style: 'italic',
+                                                color: styles['text_color_discreet']
+                                            },
+                                            content: str.file['loading']
+                                        }
+                                    )
+                            ]
                         }
                     );
+                files[i].menu =
+                    new Menu
+                    (
+                        {
+                            component: preview_icon,
+                            items: [files[i].component_preview],
+                            style: {padding: '10px'}
+                        }
+                    );      
+            }
+            else
+            {
+                preview_icon.setStyle('color', styles['text_color_discreet']);
+                preview_icon.setAttribute('onclick', 'Notifier.send({component: str.file["preview_not_avaiable"]});');
+            }
 
-            }
-            else if (type == 'audio')
+            components = [];
+            components.push
+            (
+                new Component
+                (
+                    {
+                        nickname: 'number',
+                        content: (number++) + '.',
+                        style:
+                        {
+                            font_weight: 'bold',
+                            margin_right: '4px'
+                        }
+                    }
+                )
+            );
+            components.push
+            (
+                new Component
+                (
+                    {
+                        nickname: 'file_container_' + files[i].index,
+                        style:
+                        {
+                            width: '100%',
+                            padding: '0 5px',
+                            box_sizing: 'border-box'
+                        },
+                        components:
+                        [
+                            component
+                        ]
+                    }
+                )
+            );
+            components.push(preview_icon);
+            components.push
+            (
+                new Icon
+                (
+                    {
+                        type: 'delete',
+                        style: 
+                        {
+                            cursor: 'pointer',
+                            user_select: 'none',
+                            color: styles['text_color_highlight']
+                        },
+                        attributes:
+                        {
+                            onclick: 'Component.get(' + this.index + ').deleteClick(' + files[i].index + ');'
+                        }
+                    }
+                )
+            );
+                
+            listing.append
+            (
+                new Component
+                (
+                    {
+                        nickname: 'file_row_' + files[i].index,
+                        attributes:
+                        {
+                            onmouseover: 
+                                'this.style.backgroundColor = "' + styles['background_color_highlight'] + '";',
+                            onmouseout: 
+                                'this.style.backgroundColor = "initial";'
+                        },
+                        style:
+                        {
+                            padding: '10px',
+                            display: 'flex',
+                            align_items: 'flex-start',
+                            justify_content: 'space-between',
+                            overflow: 'auto'
+                        },
+                        components: components
+                    }
+                )
+            );
+            if (this.files.length == 2)
             {
-                component = 
-                    new Audio
+                options = this.getOptionsComponent();
+                clean =
+                    new Component
                     (
                         {
-                            sources_by_type: src,
+                            nickname: 'clean',
+                            content: str.file['clean'],
                             style:
                             {
-                                height: '25px',
-                                width: '100%'
+                                cursor: 'pointer',
+                                user_select: 'none',
+                                color: styles['text_color_normal']
                             },
                             attributes:
                             {
-                                'controls': true
+                                onclick: 'Component.get(' + this.index + ').clean();',
+                                onmouseover: 'this.style.color = "' + styles['text_color_highlight'] + '"',
+                                onmouseout: 'this.style.color = "' + styles['text_color_normal'] + '"'
                             }
                         }
                     );
+                trash = options.getComponent('trash');
+                if (trash)
+                {
+                    options.insertBefore(clean, trash);
+                    options.setStyle('justify_content', 'space-between');
+                }
+                else
+                {
+                    options.append(clean);
+                    options.setStyle('justify_content', 'flex-start');
+                }
             }
         }
-        Component.get(component_preview_index).set
-        (
-            'components',
-            [
-                component
-            ]
-        );
     }
 
     getValue()
     {
-        return this.name && this.files.length ? this.files : null;
+        var i, value;
+        value = [];
+        for (i in this.files)
+        {
+            value.push(this.files[i].file_data);
+        }
+        return value;
+    }
+
+    getOptionsComponent()
+    {
+        var component;
+        component = this.getComponent('options');
+        if (!component)
+        {
+            component = 
+                new Component
+                (
+                    {
+                        nickname: 'options',
+                        style:
+                        {
+                            display: 'flex',
+                            justify_content: 'space_between',
+                            align_items: 'center',
+                            padding: '10px'
+                        }
+                    }
+                );
+            this.append(component);
+        }
+        return component;
+    }
+
+    getTrashMenuItems()
+    {
+        var i, items, trash_options;
+        this.trash_list = 
+            new Component
+            (
+                {
+                    style:
+                    {
+                        overflow: 'auto',
+                        max_height: '200px'
+                    }
+                }
+            );
+        for (i in this.trash)
+        {
+            this.trash_list.append
+            (
+                new Component
+                (
+                    {
+                        nickname: 'trash_item_' + this.trash[i].index,
+                        style:
+                        {
+                            padding: '5px 10px',
+                            gap: '20px',
+                            display: 'flex',
+                            align_items: 'center',
+                            justify_content: 'space-between',
+                            cursor: 'pointer',
+                            user_select: 'none',
+                            background_color: styles['background_color_normal']
+                        },
+                        components:
+                        [
+                            new Component
+                            (
+                                {
+                                    content: this.trash[i].file_data.name
+                                }
+                            ),
+                            new Icon
+                            (
+                                {
+                                    type: 'undo'
+                                }
+                            )
+                        ],
+                        attributes:
+                        {
+                            onclick: 'Component.get(' + this.index + ').trashItemClick(' + this.trash[i].index + ');',
+                            onmouseover: 'this.style.backgroundColor = "' + styles['background_color_highlight'] + '";',
+                            onmouseout: 'this.style.backgroundColor = "' + styles['background_color_normal'] + '";'
+                        }
+                    }
+                )
+            )
+        }
+        trash_options = [];
+        if (this.multiple)
+        {
+            trash_options.push
+            (
+                new Component
+                (
+                    {
+                        content: str.file['recover_all'],
+                        style:
+                        {
+                            padding: '10px',
+                            text_align: 'center',
+                            cursor: 'pointer',
+                            user_select: 'none',
+                            color: styles['text_color_normal']
+                        },
+                        attributes:
+                        {
+                            onclick: 'Component.get(' + this.index + ').recoverAll();',
+                            onmouseover: 'this.style.color = "' + styles['text_color_highlight'] + '";',
+                            onmouseout: 'this.style.color = "' + styles['text_color_normal'] + '";'
+                        }
+                    }
+                )
+            );
+        }
+        trash_options.push
+        (
+            new Component
+            (
+                {
+                    content: str.file['clean'],
+                    style:
+                    {
+                        padding: '10px',
+                        text_align: 'center',
+                        cursor: 'pointer',
+                        user_select: 'none',
+                        color: styles['text_color_normal']
+                    },
+                    attributes:
+                    {
+                        onclick: 'Component.get(' + this.index + ').cleanTrash();',
+                        onmouseover: 'this.style.color = "' + styles['text_color_highlight'] + '";',
+                        onmouseout: 'this.style.color = "' + styles['text_color_normal'] + '";'
+                    }
+                }
+            )
+        );
+        items =
+            [
+                this.trash_list,
+                new Component
+                (
+                    {
+                        nickname: 'trash_options',
+                        style:
+                        {
+                            display: 'flex',
+                            justify_content: 'space-around',
+                            align_items: 'center',
+                            border_top: 'solid 1px #cccccc',
+                            gap: '10px'
+                        },
+                        components: trash_options
+                    }
+                )
+            ];
+        return items;
+    }
+
+    static hasPreview(file)
+    {
+        var type, valid_types;
+        type = File.getType(file);
+        valid_types = Object.keys(this.preview);
+        return valid_types.includes(type);
+    }
+
+    static getType(file)
+    {
+        return file.file_data.type.split('/')[0];
+    }
+
+    static validateMime(mime, file_name, pattern)
+    {
+        var tokens;
+        tokens = pattern.split('/');
+        switch (tokens.length)
+        {
+            case 0:
+                return true;
+            case 1:
+                return file_name.match(new RegExp(pattern));
+            default:
+                if (tokens[1] == '*')
+                {
+                    return mime.split('/')[0] == tokens[0];
+                }
+                else
+                {
+                    return mime == pattern;
+                }
+        }
     }
 
     static start()
@@ -2380,14 +3001,14 @@ class File extends Component
             {
                 drag_one: 'arraste um arquivo aqui ou clique',
                 drag_many: 'arraste arquivos aqui ou clique',
-                clear: 'limpar',
+                clean: 'limpar',
                 trash: 'lixeira',
                 no_file: 'nenhum arquivo localizado',
                 only_one_allowed: 'envie  somente um arquivo',
-                size: 'Tamanho',
-                mime_type: 'Tipo (mime)',
-                last_modified: 'Última alteração',
-                loading: 'carregando o arquivo...'
+                loading: 'carregando o arquivo...',
+                recover_all: 'recuperar tudo',
+                invalid_type: 'Erro no tipo do arquivo',
+                preview_not_avaiable: 'Visualização não disponível'
             };
     }
 }
@@ -2427,11 +3048,6 @@ class Format
     static number(value)
     {
         return value.toLocaleString();
-    }
-
-    static mime(mime)
-    {
-        return mime.split('/')[0];
     }
 }
 
@@ -3019,25 +3635,32 @@ class Keys
 
 class Notifier
 {
+    static defaults =
+        {
+            component: null, 
+            autodestroy: true, 
+            delay: 10000, 
+            type: 'warning'
+        };
+
     static active = true;
 
     static component = null;
 
     static items = [];
 
-    static send
-    (
-        component, 
-        autodestroy = true, 
-        delay = 10000, 
-        type = 'warning'
-    )
+    static send(parameters)
     {
         var style, icons, index, item;
         if (!this.active)
         {
             return;
         }
+        parameters =
+            {
+                ...Notifier.defaults,
+                ...parameters
+            };
         index = Page.nextSequence();
         style =
             {
@@ -3048,7 +3671,7 @@ class Notifier
                 justify_content: 'space_between',
                 border: 'solid 1px #cdcdcd'
             };
-        switch (type)
+        switch (parameters.type)
         {
             case 'error':
                 style['background_color'] = '#ffe2e6';
@@ -3065,7 +3688,7 @@ class Notifier
                     str.notifier['invalid_type'], 
                     'Notifier', 
                     'item', 
-                    type
+                    parameters.type
                 );
         }
         icons = 
@@ -3088,7 +3711,7 @@ class Notifier
                     }
                 }
             );
-        if (autodestroy)
+        if (parameters.autodestroy)
         {
             icons =
                 new Component
@@ -3124,6 +3747,16 @@ class Notifier
                     }
                 );
         }
+        if (Format.isString(parameters.component))
+        {
+            parameters.component =
+                new Component
+                (
+                    {
+                        content: parameters.component
+                    }
+                );
+        }
         item = 
         {
             index: index,
@@ -3138,7 +3771,7 @@ class Notifier
                             new Component
                             (
                                 {
-                                    components: [component],
+                                    components: [parameters.component],
                                     style:
                                     {
                                         max_height: '300px',
@@ -3180,7 +3813,7 @@ class Notifier
             Page.body.append(this.component);
         }
         this.component.append(item.component);
-        if (autodestroy)
+        if (parameters.autodestroy)
         {
             item.timeout = 
                 setTimeout
@@ -3189,7 +3822,7 @@ class Notifier
                     (
                         'Notifier.startFadeout(' + item.index + ');'
                     ), 
-                    delay
+                    parameters.delay
                 );
         }
     }
@@ -3307,8 +3940,8 @@ class Menu
         {
             component: null,
             items: [],
-            vertex: null,
-            top: null,
+            vertex: 4,
+            to_up: false,
             style:
                 {
                     background_color: '#ffffff'
@@ -3325,7 +3958,7 @@ class Menu
 
     vertex;
 
-    top;
+    to_up;
 
     style;
 
@@ -3369,12 +4002,12 @@ class Menu
                 parameters.vertex 
             : 
                 null;
-        this.top = 
-            parameters.top === null ? 
+        this.to_up = 
+            parameters.to_up === null ? 
                 null 
             : 
                 (
-                    parameters.top ? 
+                    parameters.to_up ? 
                         true 
                     : 
                         false
@@ -3396,13 +4029,13 @@ class Menu
 
     position()
     {
-        var i, j, positions, vertex, top, coordinates, container;
+        var i, j, positions, vertex, to_up, coordinates, container;
         container = this.component.element.getBoundingClientRect();
         positions = 
             [
                 {
                     vertex: 1,
-                    top: true,
+                    to_up: true,
                     free_space:
                         {
                             y:
@@ -3419,7 +4052,7 @@ class Menu
                 },
                 {
                     vertex: 1,
-                    top: false,
+                    to_up: false,
                     free_space:
                         {
                             y:
@@ -3436,7 +4069,7 @@ class Menu
                 },
                 {
                     vertex: 2,
-                    top: true,
+                    to_up: true,
                     free_space:
                         {
                             y:
@@ -3453,7 +4086,7 @@ class Menu
                 },
                 {
                     vertex: 2,
-                    top: false,
+                    to_up: false,
                     free_space:
                         {
                             y:
@@ -3474,7 +4107,7 @@ class Menu
                 },
                 {
                     vertex: 3,
-                    top: true,
+                    to_up: true,
                     free_space:
                         {
                             y:
@@ -3495,7 +4128,7 @@ class Menu
                 },
                 {
                     vertex: 3,
-                    top: false,
+                    to_up: false,
                     free_space:
                         {
                             y:
@@ -3516,7 +4149,7 @@ class Menu
                 },
                 {
                     vertex: 4,
-                    top: true,
+                    to_up: true,
                     free_space:
                         {
                             y:
@@ -3533,7 +4166,7 @@ class Menu
                 },
                 {
                     vertex: 4,
-                    top: false,
+                    to_up: false,
                     free_space:
                         {
                             y:
@@ -3575,16 +4208,16 @@ class Menu
                 positions[j].vertex 
             : 
                 this.vertex;
-        top = 
-            this.top === null ?
-                positions[j].top 
+        to_up = 
+            this.to_up === null ?
+                positions[j].to_up 
             : 
-                this.top;
+                this.to_up;
         switch (vertex)
         {
             case 1:
                 coordinates =
-                    top ?
+                    to_up ?
                         {
                             y: container.top - this.container.element.offsetHeight,
                             x: container.left
@@ -3597,7 +4230,7 @@ class Menu
                 break;
             case 2:
                 coordinates =
-                    top ?
+                    to_up ?
                         {
                             y: container.top + this.container.element.offsetHeight,
                             x: container.left + container.width - this.container.element.offsetWidth
@@ -3610,7 +4243,7 @@ class Menu
                 break;
             case 3:
                 coordinates =
-                    top ?
+                    to_up ?
                         {
                             y: container.top + container.height - this.container.element.offsetHeight,
                             x: container.left + container.width
@@ -3623,7 +4256,7 @@ class Menu
                 break;
             case 4:
                 coordinates =
-                    top ?
+                    to_up ?
                         {
                             y: container.top + container.height - this.container.element.offsetHeight,
                             x: container.left - this.container.element.offsetWidth
@@ -3655,7 +4288,11 @@ class Menu
                     {
                         node: 'div',
                         style: this.style,
-                        components: this.items
+                        components: 
+                            typeof this.items == 'function' ?
+                                this.items()
+                            :
+                                this.items
                     }
                 );
             this.container.element.style.position = 'fixed';
@@ -4024,7 +4661,9 @@ class Server
                         {
                             Notifier.send
                             (
-                                request.component_notification_on_error
+                                {
+                                    component: request.component_notification_on_error
+                                }
                             );
                         }
                     }
@@ -4172,30 +4811,6 @@ class Table extends Component
     {
         return this.getComponent('row_' + row, 'col_' + col);
     }
-
-    /*
-    setRow(row, key, value)
-    {
-        this.components[row].set(key, value);
-    }
-
-    setCol(row, col, key, value)
-    {
-        this.components[row].components[col].set(key, value);
-    }
-
-    setCols(key, value)
-    {
-        var i, j;
-        for (i in this.components)
-        {
-            for (j in this.components[i].components)
-            {
-                this.components[i].components[j].set(key, value);
-            }
-        }
-    }
-    */
 }
 
 class Tabsheet extends Component
@@ -5133,5 +5748,4 @@ class Page
     }
 }
 
-//Page.start('js/dinamic.js');
-Page.start('js/teste.js');
+Page.start('js/dinamic.js');

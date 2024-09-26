@@ -240,11 +240,7 @@ class CadastroAtendimento
                                                             },
                                                             components:
                                                             [
-                                                                new File
-                                                                (
-                                                                    {
-                                                                    }
-                                                                )
+                                                                new File()
                                                             ]
                                                         }
                                                     )
@@ -272,6 +268,14 @@ class CadastroAtendimento
                                                     new Component
                                                     (
                                                         {
+                                                            node: 'p',
+                                                            content: 'Envie os 7 arquivos .txt gerados pelo Validador na pasta arqtxt',
+                                                            parse: true
+                                                        }
+                                                    ),
+                                                    new Component
+                                                    (
+                                                        {
                                                             style: 
                                                             {
                                                                 padding: '15px 0',
@@ -282,7 +286,8 @@ class CadastroAtendimento
                                                                 new File
                                                                 (
                                                                     {
-                                                                        multiple: true
+                                                                        multiple: true,
+                                                                        accept: '.txt'
                                                                     }
                                                                 )
                                                             ]
