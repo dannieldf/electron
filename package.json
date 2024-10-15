@@ -3,8 +3,8 @@
   "version": "1.0.0",
   "main": "main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "electron-forge start",
+    "start": "nodemon .",
+    "electron": "electron-forge start",
     "package": "electron-forge package",
     "make": "electron-forge make"
   },
@@ -28,9 +28,13 @@
     "@electron-forge/plugin-auto-unpack-natives": "^7.4.0",
     "@electron-forge/plugin-fuses": "^7.4.0",
     "@electron/fuses": "^1.8.0",
-    "electron": "^32.0.2"
+    "electron": "^32.0.2",
+    "nodemon": "^3.1.7"
   },
   "dependencies": {
-    "electron-squirrel-startup": "^1.0.1"
+    "electron-squirrel-startup": "^1.0.1",
+    "formidable": "^3.5.1",
+    "mime-types": "^2.1.35",
+    "mongodb": "^6.9.0"
   }
 }

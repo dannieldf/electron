@@ -21,13 +21,31 @@ Page.body.append
                 (
                     {
                         node: 'p',
-                        parse: true,
                         style: 
                         {
                             font_weight: 'bold',
                             margin_bottom: '15px'
                         },
-                        content: 'Olá Mundo!<br><br>Essa é a versão offline da aplicação. Suba a versão com Node.js'
+                        content: 'esta página não existe'
+                    }
+                ),
+                new Component
+                (
+                    {
+                        node: 'a',
+                        parse: false,
+                        attributes:
+                        {
+                            href: '/'
+                        },
+                        style:
+                        {
+                            color: '#6495ed',
+                            cursor: 'pointer',
+                            text_decoration: 'none',
+                            user_select: 'none'
+                        },
+                        content: '>> página inicial'
                     }
                 )
             ]

@@ -2,7 +2,7 @@ class Autenticacao
 {
     static formulario()
     {
-        var components;
+        var components
         components =
             [
                 new Component
@@ -120,7 +120,7 @@ class Autenticacao
                                     content: 'Esqueci a senha',
                                     attributes:
                                         {
-                                            onclick: 'Autenticacao.ajudaSenha();'
+                                            onclick: 'Autenticacao.ajudaSenha()'
                                         }
                                 }
                             ),
@@ -131,59 +131,59 @@ class Autenticacao
                                     content: 'Entrar',
                                     attributes:
                                         {
-                                            onclick: 'Autenticacao.envia();'
+                                            onclick: 'Autenticacao.envia()'
                                         }
                                 }
                             )
                         ]
                     }
                 )
-            ];
-        return components;
+            ]
+        return components
     }
 
     static envia()
     {
-        this.sucesso();
+        this.sucesso()
     }
 
     static sucesso()
     {
-        var icone;
-        PainelControle.carrega();
-        icone = Usuario.icone();
-        icone.setStyle('height', '100%');
+        var icone
+        PainelControle.carrega()
+        icone = Usuario.icone()
+        icone.setStyle('height', '100%')
         Pagina.header.set
         (
             'user', 
             icone
-        );
-        Usuario.ativaMenu(icone);
+        )
+        Usuario.ativaMenu(icone)
     }
 
     static logout()
     {
-        Usuario.destroiMenu();
-        Pagina.header.set('core', null);
-        Pagina.header.set('user', null);
-        Pagina.home();
+        Usuario.destroiMenu()
+        Pagina.header.set('core', null)
+        Pagina.header.set('user', null)
+        Pagina.home()
     }
 
     static ajudaSenha()
     {
-        alert('Em construção');
+        alert('Em construção')
     }
 }
 
 class CadastroAtendimento
 {
-    static titulo = 'Cadastro de Atendimento';
+    static titulo = 'Cadastro de Atendimento'
     
     static icone()
     {
-        var icone;
-        icone = new Icone({type: 'app_registration'});
-        return icone;
+        var icone
+        icone = new Icone({type: 'app_registration'})
+        return icone
     }
 
     static carrega()
@@ -495,19 +495,19 @@ class CadastroAtendimento
                     }
                 )
             ]
-        );
+        )
     }
 }
 
 class Conciliacao
 {
-    static titulo = 'Conciliação CCS x Contas Simba';
+    static titulo = 'Conciliação CCS x Contas Simba'
     
     static icone()
     {
-        var icone;
-        icone = new Icone({type: 'join_right'});
-        return icone;
+        var icone
+        icone = new Icone({type: 'join_right'})
+        return icone
     }
 
     static carrega()
@@ -524,7 +524,7 @@ class Conciliacao
                     }
                 )
             ]
-        );
+        )
     }
 }
 
@@ -538,7 +538,7 @@ class Container extends Glass
                 padding: '50px',
                 margin_top: '30px'
             }
-        };
+        }
 
     constructor(parameters)
     {
@@ -546,8 +546,8 @@ class Container extends Glass
             {
                 ...Container.defaults,
                 ...parameters
-            };
-        super(parameters);
+            }
+        super(parameters)
     }
 }
 
@@ -562,32 +562,32 @@ class Icone extends Svg
             width: 0,
             height: 0,
             attributes: {fill: 'none'}
-        };
+        }
 
-    cor1;
+    cor1
 
-    cor2;
+    cor2
 
-    cor3;
+    cor3
 
-    width = 0;
+    width = 0
 
-    height = 0;
+    height = 0
 
-    type;
+    type
 
     constructor(parameters)
     {
-        var i, width, height;
-        parameters = isset(parameters) ? parameters : {};
-        width = isset(parameters.width);
-        height = isset(parameters.height);
+        var i, width, height
+        parameters = isset(parameters) ? parameters : {}
+        width = isset(parameters.width)
+        height = isset(parameters.height)
         parameters =
             {
                 ...Icone.defaults,
                 ...parameters
-            };
-        super();
+            }
+        super()
         for (i in parameters)
         {
             if 
@@ -597,44 +597,44 @@ class Icone extends Svg
                 (i == 'height' && !height)
             )
             {
-                continue;
+                continue
             }
-            this.set(i, parameters[i]);
+            this.set(i, parameters[i])
         }
     }
 
     set(key, value)
     {
-        var data;
+        var data
         switch (key)
         {
             case 'type':
-                this[key] = value;
-                this.clear();
-                data = this.data();
-                this.set('components', data.components);
-                this.set('width', data.width);
-                this.set('height', data.height);
-                break;
+                this[key] = value
+                this.clear()
+                data = this.data()
+                this.set('components', data.components)
+                this.set('width', data.width)
+                this.set('height', data.height)
+                break
             case 'cor1':
             case 'cor2':
-                this[key] = value;
-                this.set('type', this.type);
-                break;
+                this[key] = value
+                this.set('type', this.type)
+                break
             case 'width':
             case 'height':
-                this[key] = value;
-                this.setAttribute(key, value);
-                this.setAttribute('viewBox', '0 0 ' + this.width + ' ' + this.height);
-                break;
+                this[key] = value
+                this.setAttribute(key, value)
+                this.setAttribute('viewBox', '0 0 ' + this.width + ' ' + this.height)
+                break
             default:
-                super.set(key, value);
+                super.set(key, value)
         }
     }
 
     data()
     {
-        var data;
+        var data
         switch (this.type)
         {
             case 'add_to_queue':
@@ -655,8 +655,8 @@ class Icone extends Svg
                                 this.cor1
                             )
                         ]
-                    };
-                return data;
+                    }
+                return data
             case 'app':
                 data = 
                     {
@@ -680,8 +680,8 @@ class Icone extends Svg
                                 this.cor2
                             )
                         ]
-                    };
-                return data;
+                    }
+                return data
             case 'app_registration':
                 data =
                     {
@@ -705,8 +705,8 @@ class Icone extends Svg
                                 this.cor1
                             )
                         ]
-                    };
-                return data;
+                    }
+                return data
             case 'assignment':
                 data =
                     {
@@ -725,8 +725,8 @@ class Icone extends Svg
                                 this.cor1
                             )
                         ]
-                    };
-                return data;
+                    }
+                return data
             case 'backward':
                 data =
                     {
@@ -745,8 +745,8 @@ class Icone extends Svg
                                 this.cor3
                             )
                         ]
-                    };
-                return data;
+                    }
+                return data
             case 'forward':
                 data =
                     {
@@ -765,8 +765,8 @@ class Icone extends Svg
                                 this.cor3
                             )
                         ]
-                    };
-                return data;
+                    }
+                return data
             case 'join_right':
                 data = 
                     {
@@ -795,8 +795,8 @@ class Icone extends Svg
                                 this.cor1
                             )
                         ]
-                    };
-                return data;
+                    }
+                return data
             case 'reload':
                 data =
                     {
@@ -820,8 +820,8 @@ class Icone extends Svg
                                 this.cor3
                             )
                         ]
-                    };
-                return data;
+                    }
+                return data
             case 'search':
                 data = 
                     {
@@ -835,8 +835,8 @@ class Icone extends Svg
                                 this.cor1
                             )
                         ]
-                    };
-                return data;
+                    }
+                return data
             case 'user':
                 data =
                     {
@@ -850,8 +850,8 @@ class Icone extends Svg
                                 this.cor1
                             )
                         ]
-                    };
-                return data;
+                    }
+                return data
             case 'view_timeline':
                 data = 
                     {
@@ -875,14 +875,14 @@ class Icone extends Svg
                                 this.cor1
                             )
                         ]
-                    };
-                return data;
+                    }
+                return data
         }
     }
 
     static path(d, fill)
     {
-        var path;
+        var path
         path =
             new Svg
             (
@@ -894,8 +894,8 @@ class Icone extends Svg
                         d: d
                     }
                 }
-            );
-        return path;
+            )
+        return path
     }
 }
 
@@ -909,7 +909,7 @@ class Logo extends Component
                     font_size: '30px',
                     color: 'gray',
                 }
-        };
+        }
 
     constructor(parametros)
     {
@@ -918,27 +918,27 @@ class Logo extends Component
                 ...Logo.defaults,
                 ...{content: Pagina.titulo},
                 ...parametros
-            };
-        super(parametros);
+            }
+        super(parametros)
     }
 }
 
 class Pagina
 {
-    static titulo;
-    static largura = 1300;
-    static altura_cabecalho = 83;
+    static titulo
+    static largura = 1300
+    static altura_cabecalho = 83
     static cores =
         {
             fundo: '#f4f4f4'
-        };
-    static cabecalho;
-    static header;
-    static corpo;
+        }
+    static cabecalho
+    static header
+    static corpo
 
     static home()
     {
-        var gap = 20;
+        var gap = 20
         Pagina.corpo.set
         (
             'components',
@@ -1028,15 +1028,15 @@ class Pagina
                     }
                 )
             ]
-        );
+        )
     }
 
     static inicia()
     {
-        var icone;
-        this.titulo = 'Simba Premium';
-        document.title = this.titulo;
-        Fonts.add('satoshi-variable', 'fonts/satoshi-variable.ttf');
+        var icone
+        this.titulo = 'Simba Premium'
+        document.title = this.titulo
+        Fonts.add('satoshi-variable', '/fonts/satoshi-variable.ttf')
         Page.body.set
         (
             'style', 
@@ -1049,10 +1049,10 @@ class Pagina
                 color: styles['text_color_normal'],
                 background: Pagina.cores['fundo']
             }
-        );
-        icone = new Icone();
-        icone.setAttribute('onclick', 'alert("' + this.titulo + '");');
-        icone.setStyle('cursor', 'pointer');
+        )
+        icone = new Icone()
+        icone.setAttribute('onclick', 'alert("' + this.titulo + '")')
+        icone.setStyle('cursor', 'pointer')
         this.header = 
             new Header
             (
@@ -1069,7 +1069,7 @@ class Pagina
                             height: '80px'
                         }
                 }
-            );
+            )
         this.cabecalho =
             new Component
             (
@@ -1084,7 +1084,7 @@ class Pagina
                             this.header
                         ]
                 }
-            );
+            )
         this.corpo = 
             new Component
             (
@@ -1097,7 +1097,7 @@ class Pagina
                         min_height: '100px'
                     }
                 }
-            );
+            )
         Page.body.set
         (
             'components',
@@ -1105,8 +1105,8 @@ class Pagina
                 this.cabecalho, 
                 this.corpo
             ]
-        );
-        Pagina.home();
+        )
+        Pagina.home()
     }
 }
 
@@ -1118,13 +1118,13 @@ class PainelControle
         (
             'core',
             this.menu()
-        );
-        Requisicao.carrega();
+        )
+        Requisicao.carrega()
     }
 
     static menu()
     {
-        var menu;
+        var menu
         menu =
             new Tabsheet
             (
@@ -1143,7 +1143,7 @@ class PainelControle
                             {
                                 icon: Requisicao.icone(),
                                 text: Requisicao.titulo, 
-                                onclick: 'Requisicao.carrega();',
+                                onclick: 'Requisicao.carrega()',
                                 background_color: '#ffffff'
                             }
                         ),
@@ -1153,7 +1153,7 @@ class PainelControle
                                 {
                                 icon: Conciliacao.icone(), 
                                 text: Conciliacao.titulo, 
-                                onclick: 'Conciliacao.carrega();',
+                                onclick: 'Conciliacao.carrega()',
                                 background_color: '#ffffff'
                             }
                         ),
@@ -1163,7 +1163,7 @@ class PainelControle
                             {
                                 icon: Quarentena.icone(), 
                                 text: Quarentena.titulo, 
-                                onclick: 'Quarentena.carrega();',
+                                onclick: 'Quarentena.carrega()',
                                 background_color: '#ffffff'
                             }
                         ),
@@ -1173,7 +1173,7 @@ class PainelControle
                             {
                                 icon: Relatorio.icone(), 
                                 text: Relatorio.titulo, 
-                                onclick: 'Relatorio.carrega();',
+                                onclick: 'Relatorio.carrega()',
                                 background_color: '#ffffff'
                             }
                         ),
@@ -1183,7 +1183,7 @@ class PainelControle
                                 {
                                     icon: CadastroAtendimento.icone(), 
                                     text: CadastroAtendimento.titulo, 
-                                    onclick: 'CadastroAtendimento.carrega();',
+                                    onclick: 'CadastroAtendimento.carrega()',
                                     background_color: '#ffffff'
                                 }
                         )
@@ -1191,20 +1191,20 @@ class PainelControle
                     active: 0,
                     trigger: Tabsheet.trigger('color')
                 }
-            );
-        return menu;
+            )
+        return menu
     }
 }
 
 class Quarentena
 {
-    static titulo = 'Quarentena de Casos';
+    static titulo = 'Quarentena de Casos'
     
     static icone()
     {
-        var icone;
-        icone = new Icone({type: 'add_to_queue'});
-        return icone;
+        var icone
+        icone = new Icone({type: 'add_to_queue'})
+        return icone
     }
 
     static carrega()
@@ -1221,19 +1221,19 @@ class Quarentena
                     }
                 )
             ]
-        );
+        )
     }
 }
 
 class Relatorio
 {
-    static titulo = 'Relatório';
+    static titulo = 'Relatório'
     
     static icone()
     {
-        var icone;
-        icone = new Icone({type: 'assignment'});
-        return icone;
+        var icone
+        icone = new Icone({type: 'assignment'})
+        return icone
     }
 
     static carrega()
@@ -1250,17 +1250,17 @@ class Relatorio
                     }
                 )
             ]
-        );
+        )
     }
 }
 
 class Requisicao
 {
-    static titulo = 'Requisições';
+    static titulo = 'Requisições'
 
-    static menu;
+    static menu
 
-    static banner;
+    static banner
 
     static tipos =
         [
@@ -1269,21 +1269,21 @@ class Requisicao
             'Requisições atendidas',
             'Casos em mora',
             'Falsas pendências de atendimento'
-        ];
+        ]
 
     static icone()
     {
-        var icone;
-        icone = new Icone({type: 'view_timeline'});
-        return icone;
+        var icone
+        icone = new Icone({type: 'view_timeline'})
+        return icone
     }
     
     static carrega()
     {
-        var i, components, items, item, css_value;
-        css_value = '';
-        components = [];
-        items = [];
+        var i, components, items, item, css_value
+        css_value = ''
+        components = []
+        items = []
         for (i in Requisicao.tipos)
         {
             components.push
@@ -1324,11 +1324,11 @@ class Requisicao
                         ]
                     }
                 )
-            );
-            css_value += (css_value ? ' ' : '') + 'auto';
-            item = Tabsheet.item('check', {});
+            )
+            css_value += (css_value ? ' ' : '') + 'auto'
+            item = Tabsheet.item('check', {})
             item.set('nickname', 'item_' + i)
-            items.push(item);
+            items.push(item)
         }
         this.menu = 
             new Tabsheet
@@ -1344,7 +1344,7 @@ class Requisicao
                     },
                     trigger: Tabsheet.trigger('check')
                 }
-            );
+            )
         this.banner =
             new Component
             (
@@ -1358,7 +1358,7 @@ class Requisicao
                     },
                     components: components
                 }
-            );
+            )
         Pagina.corpo.set
         (
             'components',
@@ -1389,13 +1389,13 @@ class Requisicao
                     }
                 )
             ]
-        );
+        )
         // stubs
-        this.setContagem(0, 4);
-        this.setContagem(1, 125);
-        this.setContagem(2, 12563);
-        this.setContagem(3, 21);
-        this.setContagem(4, 0); 
+        this.setContagem(0, 4)
+        this.setContagem(1, 125)
+        this.setContagem(2, 12563)
+        this.setContagem(3, 21)
+        this.setContagem(4, 0) 
     }
 
     static setContagem(indice, quantidade)
@@ -1404,7 +1404,7 @@ class Requisicao
         (
             'content',
             Format.number(quantidade)
-        );
+        )
         this.menu.getComponent('item_' + indice, 'text').set
         (
             'content',
@@ -1415,25 +1415,25 @@ class Requisicao
                     ''
             ) +
             Requisicao.tipos[indice]
-        );
+        )
     }
 }
 
 class Usuario
 {
-    static autenticado = false;
+    static autenticado = false
     
-    static nome = '';
+    static nome = ''
     
-    static id = null;
+    static id = null
     
-    static menu;
+    static menu
 
     static icone()
     {
-        var icone;
-        icone = new Icone({type: 'user'});
-        return icone;
+        var icone
+        icone = new Icone({type: 'user'})
+        return icone
     }
 
     static ativaMenu(component)
@@ -1458,13 +1458,21 @@ class Usuario
                             }
                         }
                 }
-            );
+            )
     }
 
     static destroiMenu()
     {
-        this.menu.destroy();
+        this.menu.destroy()
     }
 }
 
-Pagina.inicia();
+class Teste
+{
+    static ola(parameters)
+    {
+        alert(parameters.msg)
+    }
+}
+
+Pagina.inicia()
