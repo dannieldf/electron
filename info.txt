@@ -1,0 +1,13 @@
+INSTALAR:
+npm init
+npm install nodemon
+npm install formidable
+npm install --save-dev electron
+npm install --save-dev @electron-forge/cli
+npx electron-forge import
+
+RODAR O EXE:
+
+GERAR O EXE:
+npm run make
+out\teste-win32-x64\electron.exe

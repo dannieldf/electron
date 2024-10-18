@@ -11,7 +11,7 @@ class Server
             payload_post_invalid: {}
         }
     
-    static create()
+    static start()
     {
         const {createServer} = require('node:http')
         this.listener = 
@@ -78,7 +78,7 @@ class Server
                         try 
                         {
                             user_class = require(root + 'server/' + class_name)
-                            if (ajax) 
+                            if (ajax)
                             {
                                 const formidable = require('formidable')
                                 const form =

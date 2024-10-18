@@ -1,6 +1,6 @@
 class Desktop
 {
-    init()
+    start()
     {
         const {app} = require('electron/main')
         app.whenReady().then

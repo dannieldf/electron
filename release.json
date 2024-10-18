@@ -1,0 +1,13 @@
+{
+    "versao_desktop": false,
+    "instituicao": "",
+    "servidor_app": "D",
+    "servidor_bd": "D",
+    "banco_postgres":
+    {
+        "host": "localhost",
+        "porta": 5432,
+        "usuario": "postgres",
+        "senha": "123456"
+    }
+}
