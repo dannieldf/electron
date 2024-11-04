@@ -46,6 +46,10 @@ class Component
         var i, j
         this.index = Page.nextSequence()
         Component.instances[this.index] = this
+        if (Format.isString(parameters))
+        {
+            parameters = {content: parameters}
+        }
         parameters = 
             {
                 ...Component.defaults,
@@ -203,13 +207,7 @@ class Component
     {
         if (this == component)
         {
-            Error
-            (
-                str.component['appending_itself'], 
-                'Component', 
-                'append', 
-                component
-            )
+            throw new Error(str.component['appending_itself'])
         }
         Component.validate(component)
         this.element.appendChild(component.element)
@@ -244,6 +242,27 @@ class Component
             }
         }
         return false
+    }
+
+    insertAfter(new_component, existing_component)
+    {
+        var i
+        for (i in this.components)
+        {
+            if (this.components[i] == existing_component)
+            {
+                if (typeof this.components[parseInt(i) + 1] == 'undefined')
+                {
+                    this.append(new_component)
+                }
+                else
+                {
+                    this.insertBefore(new_component, this.components[parseInt(i) + 1])
+                }
+                return
+            }
+        }
+        throw new Error('Component.insertAfter error: invalid existing component')
     }
 
     removeChild(component)
@@ -359,6 +378,28 @@ class Component
         this.element.value = value
     }
 
+    getValues(check_itself = false)
+    {
+        var i, values
+        values = {}
+        if (check_itself && this.name)
+        {
+            values[this.name] = this.getValue()
+        }
+        else
+        {
+            for (i in this.components)
+            {
+                values =
+                    {
+                        ...values,
+                        ...this.components[i].getValues(true)
+                   }
+            }
+        }
+        return values
+    }
+
     serverParameters()
     {
         var i, parameters
@@ -432,7 +473,7 @@ class Component
     {
         if (!component instanceof Component)
         {
-            Error(str.component['invalid_component'])
+            new Error(str.component['invalid_component'])
         }
     }
 
@@ -477,6 +518,7 @@ class Component
     {
         var i, instance
         instance = this.get(index)
+        if (!instance) console.log(index)
         for (i in instance.events[eventName])
         {
             instance.events[eventName][i](eventData)
@@ -571,6 +613,954 @@ class Audio extends Component
     }
 }
 
+class Authenticator extends Component
+{
+    static defaults =
+        {
+            show_form: null, // tela de boas vindas para quem esta deslogado
+            show_register_form: null, // funcao chamada para exibir formulario de cadastro com Authenticator.load()
+            callback: null, // funcao chamada caso o login de certo
+            password_rules: [] // lista de mensagens de regras de senha
+        }
+
+    static show_form
+
+    process_email
+    process_auth
+    process_new_pass
+    email_locked
+    show_pass
+    component_list
+    processing_new_pass = false
+
+    constructor(parameters = {})
+    {
+        var i, id, email_input, email_row, email_button, email_icon, expansion
+        id = Page.nextSequence()
+        email_input =
+            new Input
+            (
+                {
+                    nickname: 'email_input',
+                    name: 'email',
+                    attributes:
+                    {
+                        id: 'email#' + id
+                    }
+                }
+            )
+        email_row =
+            new Component
+            (
+                {
+                    style:
+                    {
+                        display: 'flex',
+                        margin_top: '15px'
+                    },
+                    components:
+                    [
+                        new Component
+                        (
+                            {
+                                node: 'label',
+                                content: str.authenticator.email + ': ',
+                                style:
+                                {
+                                    padding: '10px',
+                                    cursor: 'pointer',
+                                    width: '30%',
+                                    text_align: 'right',
+                                    display: 'inline-block'
+                                },
+                                attributes:
+                                {
+                                    for: email_input.element.id
+                                }
+                            }
+                        )
+                    ]
+                }
+            )
+        expansion = new Component()
+        parameters =
+            {
+                ...Authenticator.defaults,
+                ...parameters
+            }
+        super
+        (
+            {
+                components:
+                [
+                    email_row,
+                    expansion
+                ]
+            }
+        )
+        this.email_locked = false
+        email_input.setAttribute('onkeyup', `Component.get(${this.index}).emailInputKeyup()`)
+        email_icon = this.getEmailIcon(false)
+        email_button = 
+            this.getButtonIcon
+            (
+                email_icon,
+                styles.text_color_highlight
+            )
+        email_button.setAttribute('onclick', `Component.get(${this.index}).emailButtonClick()`)
+        email_row.append
+        (
+            Authenticator.inputGrid
+            (
+                email_input,
+                email_button
+            ),
+            expansion
+        )
+        this.component_list =
+            {
+                email_input: email_input,
+                email_button: email_button,
+                email_icon: email_icon,
+                expansion: expansion
+            }
+        for (i in parameters)
+        {
+            this.set(i, parameters[i])
+        }
+    }
+
+    set(key, value)
+    {
+        switch (key)
+        {
+            case 'show_form':
+            case 'show_register_form':
+            case 'callback':
+                if (value !== null && typeof value != 'function')
+                {
+                    throw new Error(str.authenticator.invalid_function + ' (' + key + ')')
+                }
+                this[key] = value
+                break
+            case 'password_rules':
+                if (value === null)
+                {
+                    value = []
+                }
+                if (!Array.isArray(value))
+                {
+                    throw new Error(str.authenticator.invalid_password_rules)
+                }
+                this.password_rules = value
+                break
+            default: 
+                super.set(key, value)
+        }
+    }
+
+    getButtonIcon(icon, color)
+    {
+        var button
+        button =
+            new Component
+            (
+                {
+                    node: 'button',
+                    components: [icon],
+                    style:
+                    {
+                        display: 'flex',
+                        justify_content: 'center',
+                        align_items: 'center',
+                        background_color: color,
+                        border_radius: '4px',
+                        border_width: '0'
+                    }
+                }
+            )
+        return button
+    }
+
+    getEmailIcon(blocked)
+    {
+        var icon
+        icon =
+            new Icon
+            (
+                {
+                    type: blocked ? 'arrow_back_ios' : 'arrow_forward_ios', 
+                    colors: [styles.button_primary_color]
+                }
+            )
+        return icon
+    }
+
+    lockEmail()
+    {
+        this.email_locked = true
+        this.component_list['email_icon'].destroy()
+        this.component_list['email_icon'] = this.getEmailIcon(true)
+        this.component_list['email_button'].set('components', [this.component_list['email_icon']])
+        this.component_list['email_input'].setAttribute('disabled', true)
+    }
+
+    unlockEmail()
+    {
+        this.email_locked = false
+        this.component_list['email_icon'].destroy()
+        this.component_list['email_icon'] = this.getEmailIcon(false)
+        this.component_list['email_button'].set('components', [this.component_list['email_icon']])
+        this.component_list['email_input'].setAttribute('disabled', false)
+        this.component_list['email_input'].element.focus()
+    }
+
+    emailInputKeyup()
+    {
+        if (event.keyCode == 13)
+        {
+            this.emailButtonClick(false)
+        }
+    }
+
+    emailButtonClick()
+    {
+        var email
+        if (this.email_locked)
+        {
+            this.unlockEmail()
+            this.component_list['expansion'].clear()
+        }
+        else
+        {
+            email = this.component_list['email_input'].getValue().trim()
+            if (email)
+            {
+                this.lockEmail()
+                this.load
+                (
+                    [
+                        new Component
+                        (
+                            {
+                                content: str.app.loading,
+                                style:
+                                {
+                                    padding: '20px 0',
+                                    text_align: 'center',
+                                    font_style: 'italic',
+                                    color: styles['text_color_discreet']
+                                }
+                            }
+                        )
+                    ]
+                )
+                this.processEmail()
+            }
+            else
+            {
+                this.component_list['email_input'].element.select()
+            }
+        }
+    }
+
+    processEmail(email)
+    {
+        Server.call
+        (
+            'Authenticator.processEmail', 
+            {
+                email: this.component_list['email_input'].getValue()
+            },
+            new Function
+            (
+                'data', 
+                `Component.get(${this.index}).processEmailCallback(data)`
+            )
+        )
+    }
+
+    processEmailCallback(data)
+    {
+        var situacao = data.situacao
+        switch (situacao)
+        {
+            case 'invalid_email':
+                alert(str.authenticator['msg_invalid_email'])
+                this.unlockEmail()
+                this.load(null)
+                break
+            case 'email_not_found':
+                this.load(null)
+                if (confirm(str.authenticator['msg_register_email']))
+                {
+                    this.show_register_form(data.dados)
+                }
+                else
+                {
+                    this.unlockEmail()
+                }
+                break
+            case 'email_found':
+                this.showPasswordInput
+                (
+                    Cookies.get('remember')
+                )
+                break
+            case 'blocked_password':
+                alert('senha bloqueada')
+                break
+            default:
+                throw new Error(str.app.invalid_response)
+        }
+    }
+
+    showPasswordInput(remember = false)
+    {
+        var i, id, components, component
+        id = Page.nextSequence()
+        this.show_pass = false
+        this.component_list['pass_input'] = 
+            new Input
+            (
+                {
+                    name: 'password',
+                    attributes:
+                    {
+                        type: 'password',
+                        id: 'pass#' + id,
+                        onkeyup: `Component.get(${this.index}).passInputKeyup()` 
+                    }
+                }
+            )
+        this.component_list['pass_button'] =
+            this.getButtonIcon
+            (
+                new Icon
+                (
+                    {
+                        type: 'support'
+                    }
+                ),
+                styles.button_secondary_bgcolor
+            )
+        this.component_list['remember'] =
+            new Checkbox
+            (
+                {
+                    name: 'remember',   
+                    checked: remember,
+                    attributes: 
+                    {
+                        onchange: `Component.get(${this.index}).changeRemember(this.checked)`
+                    }
+                }
+            )
+        components =
+            [
+                new Component
+                (
+                    {
+                        style:
+                        {
+                            display: 'flex',
+                            margin_top: '15px'
+                        },
+                        components:
+                        [
+                            new Component
+                            (
+                                {
+                                    node: 'label',
+                                    content: str.authenticator.password + ': ',
+                                    style:
+                                    {
+                                        padding: '10px',
+                                        cursor: 'pointer',
+                                        width: '30%',
+                                        text_align: 'right',
+                                        display: 'inline-block'
+                                    },
+                                    attributes:
+                                    {
+                                        for: this.component_list['pass_input'].element.id
+                                    }
+                                }
+                            ),
+                            Authenticator.inputGrid
+                            (
+                                this.component_list['pass_input'],
+                                this.component_list['pass_button']
+                            )
+                        ]
+                    }
+                )
+            ]
+        if (this.password_rules.length)
+        {
+            component =
+                new Component
+                (
+                    {
+                        node: 'ol'
+                    } 
+                )
+            for (i in this.password_rules)
+            {
+                component.append
+                (
+                    new Component
+                    (
+                        {
+                            node: 'li',
+                            parse: true,
+                            content: this.password_rules[i]
+                        }
+                    )
+                )
+            }
+            component =
+                new Component
+                (
+                    {
+                        style: 
+                        {
+                            background_color: '#ffffff',
+                            border: 'solid 1px #dddddd',
+                            border_radius: '3px',
+                            margin: '0 20px',
+                            font_size: 'small',
+                            padding: '10px'
+                        },
+                        components: [component]
+                    }
+                )
+            components.push(component)
+        }
+        components.push
+        (
+            new Component
+            (
+                {
+                    style:
+                    {
+                        margin_top: '20px',
+                        padding: '0 20px',
+                        text_align: 'center'
+                    },
+                    components:
+                    [
+                        new Button
+                        (
+                            {
+                                content: str.authenticator.advance,
+                                attributes:
+                                {
+                                    onclick: `Component.get(${this.index}).process()`
+                                }
+                            }
+                        )
+                    ]
+                }
+            )
+        )
+        this.load(components)
+        new Menu
+        (
+            {
+                component: this.component_list['pass_button'],
+                items:
+                    [
+                        Menu.defaultItem
+                        (
+                            'lock_reset',
+                            str.authenticator.generate_new_password, 
+                            `Component.get(${this.index}).requestNewPass()`
+                        ),
+                        Menu.defaultItem
+                        (
+                            'support',
+                            str.authenticator.help,
+                            `Component.get(${this.index}).help()`
+                        ),
+
+                        Menu.defaultItem
+                        (
+                            'lock_open_right',
+                            new Component
+                            (
+                                {
+                                    node: 'label',
+                                    style:
+                                    {
+                                        display: 'flex',
+                                        gap: '5px'
+                                    },
+                                    components: 
+                                    [
+                                        this.component_list['remember'],
+                                        new Component(str.authenticator.remember)
+                                    ]
+                                }
+                            ), 
+                            '',
+                            false
+                        )
+                    ],
+                vertex: 1,
+                top: false,
+                style:
+                    {
+                        ...Menu.defaults.style,
+                        ...
+                        {
+                            background_color: '#ffffff'
+                        }
+                    }
+            }
+        )
+        this.component_list['pass_input'].element.focus()
+    }
+
+    changeRemember(remember)
+    {
+        Cookies.set('remember', remember)
+    }
+
+    passInputKeyup()
+    {
+        if (event.keyCode == 13)
+        {
+            this.process()
+        }
+    }
+
+    load(components)
+    {
+        if (components)
+        {
+            this.component_list['expansion'].set('components', components)
+        }
+        else
+        {
+            this.component_list['expansion'].clear()
+        }
+    }
+
+    focusEmail()
+    {
+        this.component_list['email_input'].element.focus()
+    }
+
+    showPasswordBlocked()
+    {
+        this.load
+        (
+            [
+                new Component
+                (
+                    {
+                        node: 'p',
+                        content: str.authenticator.password_blocked_info,
+                        style:
+                        {
+                            padding: '10px',
+                            margin_bottom: '10px'
+                        }
+                    }
+                ),
+                new Component
+                (
+                    {
+                        node: 'a',
+                        content: str.authenticator.generate_new_password,
+                        style:
+                        {
+                            text_decoration: 'none',
+                            cursor: 'pointer',
+                            color: styles['text_color_highlight'],
+                            padding: '10px',
+                            border_top: 'dashed 1px #cccccc'
+                        },
+                        attributes:
+                        {
+                            onclick: `Component.get(${this.index}).showNewPassForm()`
+                        }
+                    }
+                )
+            ]
+        )
+    }
+
+    requestNewPass()
+    {
+        var email
+        if (this.processing_new_pass)
+        {
+            return
+        }
+        email = this.component_list['email_input'].getValue().trim()
+        if (!email)
+        {
+            alert(str.authenticator.msg_invalid_email)
+            this.component_list['email_input'].element.focus()
+            return
+        }
+        this.processing_new_pass = true
+        Server.call
+        (
+            'Authenticator.requestNewPass', 
+            {email: email, index: this.index}
+        )
+    }
+
+    static requestNewPassCallback(data)
+    {
+        var authenticator = Component.get(data.index)
+        authenticator.processing_new_pass = false
+        if (data.error)
+        {
+            switch (data.error)
+            {
+                case 'send_error':
+                    alert(str.authenticator.send_error)
+                    break
+                case 'invalid_email':
+                    alert(str.authenticator.msg_invalid_email)
+                    break
+                default:
+                    alert(str.app.invalid_response)
+            }
+            return
+        }
+        alert(str.authenticator.new_pass_msg)
+    }
+
+    /*
+    showNewPassForm()
+    {
+        var i, j
+        i = Page.nextSequence()
+        j = new Window({title: str.authenticator.generate_new_password})
+        Window.instances[j].body.set
+        (
+            'components', 
+            [
+                new Component
+                (
+                    {
+                        style:
+                        {
+                            display: 'grid',
+                            gap: '10px',
+                            grid_template_columns: 'auto auto',
+                            padding: '20px'
+                        },
+                        components:
+                        [
+                            new Component
+                            (
+                                {
+                                    node: 'label',
+                                    content: str.authenticator.current_password_label,
+                                    attributes:
+                                    {
+                                        for: 'current_password#' + i
+                                    }
+                                }
+                            ),
+                            Authenticator.inputGrid
+                            (
+                                new Input
+                                (
+                                    {
+                                        attributes:
+                                        {
+                                            type: 'password',
+                                            id: 'current_password#' + i
+                                        }
+                                    }
+                                ),
+                                new Button
+                                (
+                                    {
+                                        type: 'secondary',
+                                        components:
+                                        [
+                                            new Icon({type: 'visibility'})
+                                        ],
+                                        onclick: `document.getElementById('current_password#${i}').type = document.getElementById('current_password#${i}').type == 'password' ? 'text' : 'password'`
+                                    }
+                                )
+                            ),
+                            new Component
+                            (
+                                {
+                                    node: 'label',
+                                    content: str.authenticator.new_password_label,
+                                    attributes:
+                                    {
+                                        for: 'new_password#' + i
+                                    }
+                                }
+                            ),
+                            Authenticator.inputGrid
+                            (
+                                new Input
+                                (
+                                    {
+                                        attributes:
+                                        {
+                                            type: 'password',
+                                            id: 'new_password#' + i
+                                        }
+                                    }
+                                ),
+                                new Button
+                                (
+                                    {
+                                        type: 'secondary',
+                                        components:
+                                        [
+                                            new Icon({type: 'visibility'})
+                                        ],
+                                        onclick: `document.getElementById('new_password#${i}').type = document.getElementById('new_password#${i}').type == 'password' ? 'text' : 'password'`
+                                    }
+                                )
+                            ),
+                            new Component
+                            (
+                                {
+                                    node: 'label',
+                                    content: str.authenticator.confirm_password_label,
+                                    attributes:
+                                    {
+                                        for: 'confirm_new_password#' + i
+                                    }
+                                }
+                            ),
+                            Authenticator.inputGrid
+                            (
+                                new Input
+                                (
+                                    {
+                                        attributes:
+                                        {
+                                            type: 'password',
+                                            id: 'confirm_new_password#' + i
+                                        }
+                                    }
+                                ),
+                                new Button
+                                (
+                                    {
+                                        type: 'secondary',
+                                        components:
+                                        [
+                                            new Icon({type: 'visibility'})
+                                        ],
+                                        onclick: `document.getElementById('confirm_new_password#${i}').type = document.getElementById('confirm_new_password#${i}').type == 'password' ? 'text' : 'password'`
+                                    }
+                                )
+                            )
+                        ]
+                    }
+                ),
+                new Component
+                (
+                    {
+                        style: 
+                        {
+                            padding: '10px 0',
+                            text_align: 'center'
+                        },
+                        components:
+                        [
+                            new Button
+                            (
+                                {
+                                    content: str.app.save,
+                                    attributes:
+                                    {
+                                        onclick: `Authenticator.processNewPass(${j})`
+                                    }
+                                }
+                            )   
+                        ]
+                    }
+                )
+            ]
+        )
+    }
+
+    processNewPass(window)
+    {
+        var data
+        data = Window.instances[window].window.getValues()
+        if (data.new_password != data.confirm_password)
+        {
+            alert(str.authenticator.no_pass_confirm)
+            return
+        }
+        if (data.current_password == data.new_password)
+        {
+            alert(str.authenticator.no_pass_change)
+            return
+        }
+        data.window = window
+        delete data.confirm_password
+        Server.call
+        (
+            'Authenticator.processNewPassword',
+            data
+        )
+    }
+
+    processNewPassCallback(data)
+    {
+        if (data.error)
+        {
+            switch (data.error)
+            {
+                default:
+                    alert(data.error)
+            }
+            return
+        }
+        alert(str.authenticator.password_changed)
+        if (typeof Window.instances[data.window] != 'undefined')
+        {
+            Window.instances[data.window].close()
+        }
+    }
+    */
+
+    process()
+    {
+        var values
+        values = this.getValues()
+        values.remember = Cookies.get('remember') ? true : false
+        Server.call('Authenticator.process', values)
+    }
+
+    static processCallback(dados)
+    {
+        if (dados.error_msg)
+        {
+            alert(dados.error_msg)
+        }
+        else
+        {
+            Cookies.set('session_id', dados.session_id)
+            Cookies.set('user_id', dados.user_id)
+            Cookies.set('remember', dados.remember)
+            location.reload()
+        }
+    }
+
+    help()
+    {
+        if (confirm(str.authenticator.msg_help))
+        {
+            window.open(`https://api.whatsapp.com/send?phone=5561999990313`)
+        }
+    }
+
+    static inputGrid(input, button)
+    {
+        var component
+        component =
+            new Component
+            (
+                {
+                    style:
+                    {
+                        display: 'grid',
+                        grid_template_columns: `auto 30px`,
+                        column_gap: '10px',
+                        width: '60%'
+                    },
+                    components:
+                    [
+                        input,
+                        button
+                    ]
+                }
+            )
+        return component
+    }
+
+    static showForm()
+    {
+        if (typeof Authenticator.show_form == 'function')
+        {
+            Authenticator.show_form()
+        }
+        else
+        {
+            throw new Error(str.authenticator.no_form_defined)
+        }
+    }
+    
+    static async logout()
+    {
+        //var cookies
+        //Usuario.destroiMenu()
+        //Pagina.header.set('core', null)
+        //Pagina.header.set('user', null)
+        //Pagina.home({conectado: false})
+        //cookies = Cookies.getAll()
+        if (Cookies.get('session_id'))
+        {
+            await Server.call
+            (
+                'Authenticator.logout', 
+                {
+                    session_id: Cookies.get('session_id'), 
+                    user_id: Cookies.get('user_id')
+                }
+            )
+        }
+    }
+
+    static logoutCallback()
+    {
+        console.log('callback')
+        Cookies.clear()
+        location.assign('')
+    }
+
+    static start()
+    {
+        str.authenticator =
+            {
+                email: 'Email',
+                password: 'Senha',
+                generate_new_password: 'refazer a senha',
+                help: 'atendimento',
+                msg_help: 'Nosso atendimento é em horário comercial via Whatsapp. Deseja prosseguir?',
+                msg_invalid_email: 'E-mail inválido',
+                msg_register_email: 'Esse e-mail é novo por aqui. Vamos cadastrar?',
+                remember: 'lembrar',
+                advance: 'Avançar',
+                invalid_function: 'método inválido',
+                invalid_password_rules: 'não foi passada uma lista de regras válida para password',
+                password_blocked_info: 'Foram registradas várias tentativas de acesso a esta conta, por isso a senha foi invalidada.',
+                no_form_defined: 'Alimente Authenticator.show_form com uma função que mostra a tela de login, use os recursos da própria classe Authenticator',
+                invalid_credentials: 'Credenciais inválidas',
+                expired_licence: 'A licença expirou',
+                current_password_label: 'Senha atual',
+                new_password_label: 'Digite uma nova senha segura',
+                confirm_password_label: 'Confirme a senha',
+                password_changed: 'Senha alterada',
+                no_pass_change: 'Não houve alteração',
+                no_pass_confirm: 'Confirme a nova senha',
+                new_pass_msg: 'Enviamos o e-mail com link para gerar uma senha nova. Cheque sua caixa postal',
+                send_error: 'Não é possível enviar o link por e-mail para gerar uma nova senha. Tente mais tarde'
+            }  
+    }
+}
+
 class Button extends Component
 {
     static defaults =
@@ -647,7 +1637,7 @@ class Button extends Component
     getStyle(hover)
     {
         var userStyle, defaultStyle, typeStyle, sizeStyle, finalStyle
-        userStyle = coalesce(this.userStyle, {})
+        userStyle = this.userStyle ?? {}
         defaultStyle =
             {
                 filter: 'brightness(' + (hover ? '92%' : '100%') + ')',
@@ -766,6 +1756,124 @@ class Button extends Component
         super.set('style', this.getStyle(activated))
     }
 
+}
+
+class Checkbox extends Component
+{
+    static defaults =
+        {
+            checked: false
+        }
+
+    constructor(parameters = {})
+    {
+        var i
+        parameters =
+            {
+                ...Checkbox.defaults,
+                ...parameters
+            }
+        super
+        (
+            {
+                node: 'input',
+                attributes:
+                {
+                    type: 'checkbox'
+                }
+            }
+        )
+        for (i in parameters)
+        {
+            this.set(i, parameters[i])
+        }
+    }
+
+    set(key, value)
+    {
+        switch (key)
+        {
+            case 'checked':
+                this.element.checked = value
+                break
+            default:
+                super.set(key, value)
+        }
+    }
+
+    getValue()
+    {
+        return this.element.checked
+    }
+}
+
+class Cookies
+{
+    static set(key, value)
+    {
+        var data, expires, descriptor
+        data = new Date()
+        data.setFullYear(data.getFullYear() + 10)
+        expires = 'expires=' + data.toUTCString()
+        descriptor = 
+            key + '=' + value + ';' + 
+            expires + ';' + 
+            'path=/;'
+        document.cookie = descriptor
+    }
+    
+    static get(name)
+    {
+        var i, tokens, token
+        name += '='
+        tokens = document.cookie.split(';')
+        for (i = 0; i < tokens.length; i++)
+        {
+            token = tokens[i]
+            while (token.charAt(0) == ' ')
+            {
+                token = token.substring(1)
+            }
+            if (token.indexOf(name) == 0)
+            {
+                return token.substring(name.length, token.length)
+            }
+        }
+        return ''
+    }
+
+    static delete(nome) 
+    {
+        document.cookie = nome + '=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+    }
+
+    static clear()
+    {
+        var i, tokens, token, pos_igual, nome
+        tokens = document.cookie.split(';')
+        for (i = 0; i < tokens.length; i++) 
+        {
+            token = tokens[i]
+            pos_igual = token.indexOf('=')
+            nome = pos_igual > -1 ? token.substr(0, pos_igual) : token
+            this.delete(nome)
+        }
+    }
+
+    static getAll()
+    {
+        var i, tokens, token, pos_igual, nome, cookies
+        tokens = document.cookie.split(';')
+        cookies = {}
+        for (i = 0; i < tokens.length; i++) 
+        {
+            token = tokens[i]
+            pos_igual = token.indexOf('=')
+            nome = pos_igual > -1 ? token.substr(0, pos_igual) : token
+            cookies[nome] = this.get(nome)
+        }
+        return cookies
+    }
 }
 
 class Datatable extends Component
@@ -945,7 +2053,11 @@ class Datatable extends Component
                             (
                                 {
                                     type: 'dataset',
-                                    style: {margin_right: '5px', color: '#ccc'}
+                                    style: 
+                                    {
+                                        margin_right: '5px', 
+                                        //color: '#ccc'
+                                    }
                                 }
                             ),
                             new Component
@@ -1817,7 +2929,7 @@ class File extends Component
                                     text_align: 'left',
                                     padding: '10px',
                                     max_width: '500px',
-                                    max_height: '500px',
+                                    max_height: '300px',
                                     overflow: 'auto'
                                 }
                             }
@@ -2623,12 +3735,12 @@ class File extends Component
                 new Icon
                 (
                     {
-                        type: 'remove_red_eye',
+                        type: 'preview',
                         style: 
                         {
                             cursor: 'pointer',
-                            user_select: 'none',
-                            color: styles['text_color_normal']
+                            //user_select: 'none',
+                            //color: styles['text_color_normal']
                         }
                     }
                 )
@@ -2726,8 +3838,8 @@ class File extends Component
                         style: 
                         {
                             cursor: 'pointer',
-                            user_select: 'none',
-                            color: styles['text_color_highlight']
+                            //user_select: 'none',
+                            //color: styles['text_color_highlight']
                         },
                         attributes:
                         {
@@ -3041,9 +4153,9 @@ class Format
         return value.replace(/_/g, '-')
     }
 
-    static isString(test)
+    static isString(value)
     {
-        return typeof test === 'string' || test instanceof String
+        return typeof value === 'string' || value instanceof String
     }
 
     static validValue(value, domain, coalesce = null)
@@ -3055,6 +4167,19 @@ class Format
     {
         return value.toLocaleString()
     }
+
+    static sprintf(text) 
+    {
+        var i
+        for (i in arguments) 
+        {
+            if (parseInt(i))
+            {
+                text = text.replace(`%${i}`, arguments[i])
+            }
+        }
+        return text
+    }
 }
 
 class Glass extends Component
@@ -3065,7 +4190,6 @@ class Glass extends Component
             title: '',
             style:
                 {
-                    padding: '20px',
                     background: 'rgba(255, 255, 255, 0.22)',
                     border_radius: '5px',
                     box_shadow: '0 4px 30px rgba(0, 0, 0, 0.1)',
@@ -3233,11 +4357,9 @@ class Header extends Component
                     }
                     value.set('nickname', this.nicknames['logo'])
                     component = 
-                        coalesce
-                        (
-                            this.getComponent(this.nicknames['core']),
-                            this.getComponent(this.nicknames['user'])
-                        )
+                        this.getComponent(this.nicknames['core'])
+                        ??
+                        this.getComponent(this.nicknames['user'])
                     if (have(component))
                     {
                         this.insertBefore(value, component)
@@ -3375,13 +4497,13 @@ class Header extends Component
                 icon_type: 'person',
                 style:
                     {
-                        color: styles['text_color_normal'],
-                        display: 'flex',
-                        align_items: 'center',
-                        justify_content: 'center',
+                        //color: styles['text_color_normal'],
+                        //display: 'flex',
+                        //align_items: 'center',
+                        //justify_content: 'center',
                         cursor: 'pointer',
                         user_select: 'none',
-                        font_size: 'xxx-large'
+                        //font_size: 'xxx-large'
                     },
                 items: []
             }
@@ -3415,6 +4537,7 @@ class Header extends Component
     }
 }
 
+/*
 class Icon extends Component
 {
 	static defaults =
@@ -3460,30 +4583,342 @@ class Icon extends Component
         )
     }
 }
+*/
 
 class Input extends Component
 {
     static defaults =
         {
-            size: 'medium'
+            size: 'medium',
+            options: null
         }
-
     static domains =
         {
             size: ['large', 'larger', 'medium', 'small', 'smaller', 'x-large', 'x-small', 'xx-large', 'xx-small', 'xxx-large']
         }
+    static padding = 
+        {
+            'large': 10,
+            'larger': 10, 
+            'medium': 10,
+            'small': 10,
+            'smaller': 10,
+            'x-large': 10, 
+            'x-small': 10, 
+            'xx-large': 10, 
+            'xx-small': 10, 
+            'xxx-large': 10
+        }
 
-    userStyle
+    options
 
     constructor(parameters)
     {
+        var i
         parameters = 
             {
                 ...Input.defaults,
-                ...parameters,
-                ...{node: 'input'}
+                ...parameters
             }
-        super(parameters)
+        super({node: 'input'})
+        this.options = 
+            {
+                list: [],
+                color:
+                    {
+                        active: styles.background_color_highlight,
+                        inactive: styles.background_color_normal
+                    },
+                component: null,
+                selected: null,
+                select:
+                    function(index)
+                    {
+                        if (index == this.options.selected)
+                        {
+                            return
+                        }
+                        if (this.options.selected)
+                        {
+                            this.options.component.components[this.options.selected - 1].setStyle
+                            (
+                                'background_color',
+                                this.options.colors.inactive
+                            )
+                        }
+                        this.options.selected = index
+                        this.options.component.components[this.options.selected - 1].setStyle
+                        (
+                            'background_color',
+                            this.options.colors.active
+                        )
+                        this.options.component.components[this.options.selected - 1].scrollIntoView()
+                    },
+                start:
+                    function()
+                    {
+                        var rect
+                        if 
+                        (
+                            (
+                                !this.element.type 
+                                || 
+                                this.element.type.toLowerCase() == 'text'
+                            ) 
+                            && 
+                            Array.isArray(this.options.list) 
+                            && 
+                            this.options.list.length
+                        )
+                        {
+                            if (!this.options.component)
+                            {
+                                this.options.component =
+                                    new Component
+                                    (
+                                        {
+                                            style:
+                                            {
+                                                position: 'absolute',
+                                                background: '#ffffff',
+                                                border: 'solid 1px #cccccc',
+                                                max_height: '300px',
+                                                overflow: 'auto',
+                                                z_index: Page.getZindex('menu')
+                                            }
+                                        }
+                                    )
+                                Page.body.append(this.options.component)
+                            }
+                            rect = this.element.getBoundingClientRect()
+                            this.options.component.setStyle('top', rect.top + rect.height + 'px')
+                            this.options.component.setStyle('left', rect.left + rect.left + 'px')
+                            this.options.component.setStyle('width', rect.width + 'px')
+                            this.options.filter.call(this, '')
+                            this.options.selected = 0
+                        }
+                    },
+                input:
+                    function()
+                    {
+                        if (this.options.component)
+                        {
+                            this.options.filter.call(this, this.element.value)
+                        }
+                    },
+                readKey:
+                    function()
+                    {
+                        if (!this.options.length || this.options.list.length == 0)
+                        {
+                            return
+                        }
+                        switch (event.code)
+                        {
+                            case 'ArrowUp':
+                                if (this.options.component)
+                                {
+                                    if (this.options.selected > 0)
+                                    {
+                                        this.options.select.call(this, this.options.selected - 1)
+                                    }
+                                }
+                                else
+                                {
+                                    this.options.start.call(this)
+                                    this.options.select.call(this, this.options.list.length)
+                                }
+                                break
+                            case 'ArrowDown':
+                                if (this.options.component)
+                                {
+                                    if (this.options.selected < this.options.list.length)
+                                    {
+                                        this.options.select.call(this, this.options.selected + 1)
+                                    }
+                                }
+                                else
+                                {
+                                    this.options.start.call(this)
+                                    this.options.select.call(this, 0)
+                                }
+                                break
+                            case 'Escape':
+                                this.options.end.call(this)
+                                break
+                            case 'Enter':
+                                if (this.options.selected)
+                                {
+                                    this.element.value = this.options.list[this.options.selected - 1]
+                                    this.options.end.call(this)
+                                }
+                                break
+                        }
+                    },
+                item:
+                    function(text, search, index)
+                    {
+                        var i, clipping, components, component
+                        if (search)
+                        {
+                            i = text.indexOf(search)
+                            clipping = text.substring(0, i)
+                            if (clipping)
+                            {
+                                components.push(this.options.span(this, clipping, false))
+                            }
+                            clipping = text.substring(i, search.length)
+                            if (clipping)
+                            {
+                                components.push(this.options.span(this, clipping, true))
+                            }
+                            clipping = text.substring(i + search.length)
+                            if (clipping)
+                            {
+                                components.push(this.options.span(this, clipping, false))
+                            }
+                        }
+                        else
+                        {
+                            components = [this.options.span(this, text, false)]
+                        }
+                        component =
+                            new Component
+                            (
+                                {
+                                    style:
+                                    {
+                                        padding: '5px',
+                                        cursor: 'pointer',
+                                        user_select: 'none',
+                                        background_color: this.options.colors.inactive
+                                    },
+                                    attributes:
+                                    {
+                                        onmouseover: 
+                                            `
+                                            Component.get(${this.index}).options.select.call
+                                            (
+                                                Component.get(${this.index}), 
+                                                ${index}
+                                            )
+                                            `,
+                                        onclick: 
+                                            `
+                                            Component.get(${this.index}).element.value = ${text}
+                                            `
+                                    },
+                                    components: components
+                                }
+                            )
+                        return component
+                    },
+                span:
+                    function(text, highlight)
+                    {
+                        var component
+                        component =
+                            new Component
+                            (
+                                {
+                                    node: 'span',
+                                    content: text,
+                                    style:
+                                    {
+                                        color: styles[highlight ? 'text_color_normal' : 'text_color_discreet']
+                                    }
+                                }
+                            )
+                        return component
+                    },
+                filter:
+                    function(search)
+                    {
+                        var i, index, components, beggining_matches, middle_matches
+                        components = []
+                        if (search)
+                        {
+                            beggining_matches = []
+                            middle_matches = []
+                            for (i in this.options.list)
+                            {
+                                index = this.options.list[i].indexOf(search)
+                                switch (index)
+                                {
+                                    case -1:
+                                        continue
+                                    case 0:
+                                        beggining_matches.push(i)
+                                        break
+                                    default:
+                                        middle_matches.push(i)
+                                }
+                            }
+                            for (i in beggining_matches)
+                            {
+                                components.push
+                                (
+                                    this.options.item.call
+                                    (
+                                        this, 
+                                        this.options.list[beggining_matches[i]], 
+                                        search,
+                                        parseInt(beggining_matches[i]) + 1
+                                    )
+                                ) 
+                            }
+                            for (i in middle_matches)
+                            {
+                                components.push
+                                (
+                                    this.options.item.call
+                                    (
+                                        this, 
+                                        this.options.list[middle_matches[i]], 
+                                        search,
+                                        parseInt(middle_matches[i]) + 1
+                                    )
+                                ) 
+                            }
+                        }
+                        else
+                        {
+                            for (i in this.options.list)
+                            {
+                                components.push
+                                (
+                                    this.options.item.call
+                                    (
+                                        this, 
+                                        this.options.list[i], 
+                                        '',
+                                        parseInt(i) + 1
+                                    )
+                                )
+                            }
+                        }
+                        this.options.component.set('components', components)
+                    },
+                end:
+                    function()
+                    {
+                        if (this.options.component)
+                        {
+                            this.options.component.destroy()
+                            this.options.component = null
+                            this.options.selected = null
+                        }
+                    }
+            }
+        this.element.addEventListener('focus', new Function(`Component.get(${this.index}).focus()`))
+        this.element.addEventListener('input', new Function(`Component.get(${this.index}).input()`))
+        this.element.addEventListener('blur', new Function(`Component.get(${this.index}).blur()`))
+        this.element.addEventListener('keyup', new Function(`Component.get(${this.index}).keyup()`))
+        this.applyDefaultStyles()
+        for (i in parameters)
+        {
+            this.set(i, parameters[i])
+        }
     }
 
     set (key, value)
@@ -3491,49 +4926,107 @@ class Input extends Component
         switch (key)
         {
             case 'size':
-                this[key] = Format.validValue(value, Input.domains['size'], 'medium')
-                super.set('style', this.getStyle())
+                this.size = Format.validValue(value, Input.domains['size'], 'medium')
+                super.setStyle('padding', Input.padding[this.size] + 'px')
                 break
-            case 'style':
-                this.userStyle = value
-                value = this.getStyle()
+            case 'options':
+                this.options.selected = 0
+                this.options.list = Array.isArray(value) ? value : null
+                break
             default:
                 super.set(key, value)
         }
     }
 
-    getStyle()
+    applyDefaultStyles()
     {
-        var padding, userStyle, defaultStyle, finalStyle
-        userStyle = coalesce(this.userStyle, {})
-        padding = 
-            {
-                'large': 10, 
-                'larger': 10, 
-                'medium': 10,
-                'small': 10,
-                'smaller': 10,
-                'x-large': 10, 
-                'x-small': 10, 
-                'xx-large': 10, 
-                'xx-small': 10, 
-                'xxx-large': 10
-            }
-        defaultStyle =
+        var i, default_style
+        default_style =
             {
                 font_size: this.size,
                 border: styles['input_border'],
                 border_radius: styles['input_radius'],
-                padding: padding[this.size] + 'px',
+                padding: Input.padding[this.size] + 'px',
                 box_sizing: 'border-box',
                 margin: 0
             }
-        finalStyle =
-            {
-                ...defaultStyle,
-                ...userStyle
-            }
-        return finalStyle
+        for (i in default_style)
+        {
+            this.setStyle(i, default_style[i])
+        }
+    }
+
+    focus()
+    {
+        this.options.start.call(this)
+    }
+
+    input()
+    {
+        this.options.input.call(this)
+    }
+
+    blur()
+    {
+        this.options.end.call(this)
+    }
+
+    keyup()
+    {
+        this.options.readKey.call(this)
+    }
+
+    static withIcon(input, icon, onclick = '', button_type = 'secondary')
+    {
+        var component
+        if (Format.isString(icon))
+        {
+            icon =
+                new Button
+                (
+                    {
+                        type: button_type,
+                        attributes:
+                        {
+                            onclick: onclick
+                        },
+                        style: 
+                        {
+                            display: 'flex',
+                            align_items: 'center',
+                            justify_content: 'center',
+                            cursor: 'pointer',
+                            padding: 0
+                        },
+                        components: 
+                        [
+                            new Icon
+                            (
+                                {
+                                    type: icon
+                                }
+                            )
+                        ]
+                    }
+                )
+        }
+        component =
+            new Component
+            (
+                {
+                    style:
+                    {
+                        display: 'grid',
+                        grid_template_columns: 'auto 30px'
+                    },
+                    components:
+                    [
+                        input,
+                        icon
+                    ]
+                }
+            )
+        return component     
     }
 }
 
@@ -3662,6 +5155,10 @@ class Notifier
         {
             return
         }
+        if (Format.isString(parameters) || parameters instanceof Component)
+        {
+            parameters = {component: parameters}
+        }
         parameters =
             {
                 ...Notifier.defaults,
@@ -3709,11 +5206,11 @@ class Notifier
                     style:
                     {
                         cursor: 'pointer',
-                        user_select: 'none',
-                        padding: '4px',
-                        display: 'flex',
-                        align_items: 'center',
-                        justify_content: 'center'
+                        //user_select: 'none',
+                        //padding: '4px',
+                        //display: 'flex',
+                        //align_items: 'center',
+                        //justify_content: 'center'
                     }
                 }
             )
@@ -3724,6 +5221,11 @@ class Notifier
                 (
                     {
                         nickname: 'icons',
+                        style:
+                        {
+                            text_align: 'right',
+                            border_left: 'dashed 1px gray'
+                        },
                         components:
                         [
                             icons,
@@ -3731,7 +5233,7 @@ class Notifier
                             (
                                 {
                                     nickname: 'keep',
-                                    type: 'pin_drop',
+                                    type: 'keep',
                                     attributes:
                                     {
                                         onclick: 'Notifier.keep(' + index + ')',
@@ -3739,13 +5241,13 @@ class Notifier
                                     },
                                     style:
                                     {
-                                        color: '#cccccc',
+                                        //color: '#cccccc',
                                         cursor: 'pointer',
-                                        user_select: 'none',
-                                        padding: '4px',
-                                        display: 'flex',
-                                        align_items: 'center',
-                                        justify_content: 'center'
+                                        //user_select: 'none',
+                                        //padding: '4px',
+                                        //display: 'flex',
+                                        //align_items: 'center',
+                                        //justify_content: 'center'
                                     }
                                 }
                             )
@@ -3759,40 +5261,41 @@ class Notifier
                 new Component
                 (
                     {
-                        content: parameters.component
+                        content: parameters.component,
+                        parse: true
                     }
                 )
         }
         item = 
-        {
-            index: index,
-            opacity: 100,
-            component: 
-                new Component
-                (
-                    {
-                        style: style,
-                        components:
-                        [
-                            new Component
-                            (
-                                {
-                                    components: [parameters.component],
-                                    style:
+            {
+                index: index,
+                opacity: 100,
+                component: 
+                    new Component
+                    (
+                        {
+                            style: style,
+                            components:
+                            [
+                                new Component
+                                (
                                     {
-                                        max_height: '300px',
-                                        overflow: 'auto',
-                                        width: '100%'
+                                        components: [parameters.component],
+                                        style:
+                                        {
+                                            max_height: '300px',
+                                            overflow: 'auto',
+                                            width: '100%'
+                                        }
                                     }
-                                }
-                            ),
-                            icons
-                        ]
-                    }
-                ),
-            timeout: null,
-            fade_interval: null
-        }
+                                ),
+                                icons
+                            ]
+                        }
+                    ),
+                timeout: null,
+                fade_interval: null
+            }
         this.items.push(item)
         if (!this.component)
         {
@@ -3831,6 +5334,7 @@ class Notifier
                     parameters.delay
                 )
         }
+        return index
     }
 
     static startFadeout(index)
@@ -4362,68 +5866,59 @@ class Menu
         event.stopPropagation()
     }
 
-    static defaultItem(text, onclick = null, iconType = false)
+    static defaultItem(icon, text, onclick = null, auto_close_menu = true)
     {
-        var item, height, padding, parameters
+        var item, height, components, style, parameters
         height = 40
-        padding = height / 6
+        if (icon && Format.isString(icon))
+        {
+            icon = new Icon(icon)
+        }
+        if (Format.isString(text))
+        {
+            text = new Component(text)
+        }
+        components = []
+        if (icon)
+        {
+            components.push(icon)
+        }
+        components.push(text)
+        style = 
+            {
+                height: height + 'px',
+                display: 'flex',
+                align_items: 'center',
+                justify_content: 'space_around',
+                gap: '8px',
+                padding: '0 20px 0 10px',
+                position: 'relative',
+                white_space: 'nowrap',
+                background_color: styles.background_color_normal
+            }
         parameters = 
             {
                 node: 'div',
                 parse: true,
-                style: 
-                    {
-                        height: height + 'px',
-                        padding_right: (2 * padding) + 'px',
-                        display: 'flex',
-                        align_items: 'center',
-                        position: 'relative',
-                        white_space: 'nowrap'
-                    },
-                content: text
+                style: style,
+                components: components,
+                attributes:
+                {
+                    onmouseover: `this.style.backgroundColor = '${styles.background_color_highlight}'`,
+                    onmouseout: `this.style.backgroundColor = '${styles.background_color_normal}'`
+                }
             }
         onclick = onclick.trim()
         if (have(onclick))
         {
-            parameters.attributes = 
-                {
-                    onclick: 
-                        onclick + 
-                        (onclick.slice(-1) == ';' ? '' : ';') +
-                        'Menu.closeAll()' 
-                }
-            parameters.style['cursor'] = 'pointer'
-        }
-        if (iconType === false)
-        {
-            parameters.style['padding_left'] = padding + 'px'
-        }
-        else
-        {
-            parameters.style['padding_left'] = height + padding + 'px'
-            if (typeof iconType === 'string' || iconType instanceof String)
+            if (auto_close_menu)
             {
-                parameters.components =
-                    [
-                        new Icon
-                        (
-                            {
-                                style: 
-                                    {
-                                        vertical_align: 'middle', 
-                                        text_align: 'center',
-                                        user_select: 'none', 
-                                        line_height: height + 'px',
-                                        width: height + 'px',
-                                        position: 'absolute',
-                                        top: '0',
-                                        left: '0'
-                                    },
-                                type: iconType
-                            }
-                        )
-                    ]
+                onclick += 
+                    (onclick.slice(-1) == ';' ? '' : ';') +
+                    'Menu.closeAll()'
             }
+            parameters.attributes['onclick'] = onclick
+            parameters.style['cursor'] = 'pointer'
         }
         item = new Component(parameters)
         return item
@@ -4532,189 +6027,719 @@ class Select extends Component
 {
     static defaults =
         {
-            size: 'medium'
+            size: 'medium',
+            options: null,
+            selected: null
         }
-
     static domains =
         {
             size: ['large', 'larger', 'medium', 'small', 'smaller', 'x-large', 'x-small', 'xx-large', 'xx-small', 'xxx-large']
         }
-
-    userStyle
+    static padding = 
+        {
+            'large': 10,
+            'larger': 10, 
+            'medium': 10,
+            'small': 10,
+            'smaller': 10,
+            'x-large': 10, 
+            'x-small': 10, 
+            'xx-large': 10, 
+            'xx-small': 10, 
+            'xxx-large': 10
+        }
+    selected
 
     constructor(parameters)
     {
+        var i
         parameters = 
             {
-                ...Input.defaults,
-                ...parameters,
-                ...{node: 'select'}
+                ...Select.defaults,
+                ...parameters
             }
-        super(parameters)
+        super({node: 'select'})
+        this.applyDefaultStyles()
+        for (i in parameters)
+        {
+            this.set(i, parameters[i])
+        }
     }
 
     set (key, value)
     {
+        var i, attributes
         switch (key)
         {
             case 'size':
-                this[key] = Format.validValue(value, Input.domains['size'], 'medium')
+                this.size = Format.validValue(value, Input.domains['size'], 'medium')
+                this.setStyle('padding', Select.padding[this.size] + 'px')
                 break
-            case 'style':
-                this.userStyle = value
-                value = this.getStyle()
+            case 'options':
+                this.clear()
+                if (value)
+                {
+                    for (i in value)
+                    {
+                        attributes = {}
+                        if (Array.isArray(value))
+                        {
+                            if (this.selected !== null && value[i] == this.selected)
+                            {
+                                attributes['selected'] = true
+                            }
+                        }
+                        else
+                        {
+                            attributes['value'] = i
+                            if (this.selected !== null && i == this.selected)
+                            {
+                                attributes['selected'] = true
+                            }
+                        }
+                        this.append
+                        (
+                            new Component
+                            (
+                                {
+                                    node: 'option',
+                                    content: value[i],
+                                    attributes: attributes
+                                }
+                            )
+                        )    
+                    }
+                }
+                break
+            case 'selected':
+                this.selected = value
+                this.element.value = value
+                break
             default:
                 super.set(key, value)
         }
     }
 
-    getStyle()
+    applyDefaultStyles()
     {
-        var padding, userStyle, defaultStyle, finalStyle
-        userStyle = coalesce(this.userStyle, {})
-        padding = 
-            {
-                'large': 10, 
-                'larger': 10, 
-                'medium': 10,
-                'small': 10,
-                'smaller': 10,
-                'x-large': 10, 
-                'x-small': 10, 
-                'xx-large': 10, 
-                'xx-small': 10, 
-                'xxx-large': 10
-            }
-        defaultStyle =
+        var i, default_style
+        default_style =
             {
                 font_size: this.size,
                 border: styles['input_border'],
                 border_radius: styles['input_radius'],
-                padding: padding[have(this.size) ? this.size : 'medium'] + 'px'
+                padding: Select.padding[have(this.size) ? this.size : 'medium'] + 'px'
             }
-        finalStyle =
-            {
-                ...defaultStyle,
-                ...userStyle
-            }
-        return finalStyle
+        for (i in default_style)
+        {
+            this.setStyle(i, default_style[i])
+        }
     }
 }
 
 class Server
-{
-    static defaults =
-        {
-            http_verb: 'post',
-            async: true,
-            api_endpoint: 0,
-            method: '',
-            parameters: {},
-            callback: null,
-            component_notification_on_error: null
-        }
-    
-    static endpoints =
-        [
-            'index'
-        ]
+{   
+    static connections = []
 
-    static requests = []
-
-    static call(parameters)
+    static async call
+    (
+        method, 
+        parameters = {}, 
+        callback = null,
+        component_notification_on_error = null
+    )
     {
-        var i, index, request, form_data, defaults
+        var i, index, terms, request, form_data
         index = Page.nextSequence()
-        defaults = Object.assign({}, Server.defaults)
-        if (!have(parameters['component_notification_on_error']))
+        if (!have(component_notification_on_error))
         {
-            defaults.component_notification_on_error =
+            terms = method.split('.')
+            component_notification_on_error =
                 new Component
                 (
                     {
-                        content: str.server['conection_failure']
+                        parse: true,
+                        content: 
+                            new Component
+                            (
+                                {
+                                    components: 
+                                    [
+                                        new Component
+                                        (
+                                            {
+                                                node: 'b',
+                                                content: terms[1].toUpperCase() + ' ' + terms[0].toUpperCase()
+                                            }
+                                        ),
+                                        new Component
+                                        (
+                                            {
+                                                node: 'div',
+                                                content: str.server['server_call_failure'],
+                                                style: 
+                                                {
+                                                    padding: '10px 0', 
+                                                    margin: '10px 0', 
+                                                    border_top: 'solid 1px #dddddd'
+                                                }
+                                            }
+                                        )
+                                    ]
+                                }
+                            )
                     }
                 )
         }
-        parameters = 
-            {
-                ...Server.defaults,
-                ...parameters
-            }
         request = new XMLHttpRequest()
-        form_data = new FormData()
         request.open
         (
-            parameters.http_verb, 
-            Server.endpoints[parameters.api_endpoint], 
-            parameters.async
+            'post', 
+            '/' + method.replace('.', '/'), 
+            true
         )
         request.onreadystatechange = 
             new Function
             (
-                'Server.onready(' + index + ')'
+                'Server.onready(' + index + ');'
             )
-        for (i in parameters.parameters)
-        {
-            form_data.append
+        i = 
+            Server.connections.push
             (
-                i, 
-                parameters[i]
+                {
+                    index: index,
+                    request: request,
+                    method: method,
+                    callback: callback
+                }
             )
-        }
-        Server.requests.push
-        (
-            {
-                index: index,
-                request: request
-            }
-        )
+        form_data = new FormData()
+        form_data.append('p', JSON.stringify(parameters))
         request.send(form_data)
+        return i
     }
 
     static onready(index)
     {
-        var request
-        for (i in Server.requests)
+        var i, j, connection, request
+        for (i in Server.connections)
         {
-            if (Server.requests[i].index == index)
+            connection = Server.connections[i]
+            if (connection.index == index)
             {
-                request = Server.requests[i].request
+                request = connection.request
                 if (request.readyState === 4)
                 {
                     if (request.status === 200) 
                     {
-                        if (typeof request.callback == 'function')
+                        try
                         {
-                            request.callback(JSON.parse(request.responseText))
+                            /*
+                            var response = JSON.parse(request.responseText)
+                            Session.revalidateCallback
+                            (
+                                {
+                                    session_id: response.cookies ? response.cookies['session_id'] : null,
+                                    user_id: response.cookies ? response.cookies['user_id'] : null,
+                                    remember: response.cookies ? response.cookies['remember'] : false,
+                                    timeout: parseInt(response.timeout) * 60000
+                                }
+                            )
+                            if (typeof connection.callback == 'function')
+                            {
+                                connection.callback(response.argument)
+                            }
+                            else
+                            {
+                                eval(connection.method + 'Callback(' + JSON.stringify(response.argument) + ')')
+                            }
+                            */
+                            if (typeof connection.callback == 'function')
+                            {
+                                connection.callback(JSON.parse(request.responseText))
+                            }
+                            else
+                            {
+                                eval(`${connection.method}Callback(${request.responseText})`)
+                            }
+                        }
+                        catch (error)
+                        {
+                            if (config.servidor_app != 'P')
+                            {
+                                console.log(error)
+                            }
                         }
                     }
                     else
                     {
                         console.log('Server error. Request: ', request)
-                        if (request.component_notification_on_error)
+                        if (connection.component_notification_on_error)
                         {
                             Notifier.send
                             (
                                 {
-                                    component: request.component_notification_on_error
+                                    component: connection.component_notification_on_error
                                 }
                             )
                         }
                     }
-                    Server.requests.splice(i, 1)
+                    Server.connections.splice(i, 1)
                     break
                 }
             }
         }
     }
 
+    static abort(index)
+    {
+        if (isset(this.connections[index]))
+        {
+            this.connections[index].request.abort()
+            return true
+        }
+        return false
+    }
+
     static start()
     {
         str.server =
             {
-                conection_failure: '#falha na conexão#'
+                server_call_failure: '#falha na conexão#',
+                offline: 'Ops. Estamos offline',
+                online: 'Oba. Estamos online'
             }
+        window.addEventListener
+        (
+            'offline',
+            function()
+            {
+                Notifier.send
+                (
+                    {
+                        component: str.server.offline, 
+                        type: 'error'
+                    }
+                )
+            }
+        )
+        window.addEventListener
+        (
+            'online',
+            function()
+            {
+                Notifier.send
+                (
+                    {
+                        component: str.server.online, 
+                        type: 'success'
+                    }
+                )
+            }
+        )
+    }
+}
+
+class Session
+{
+    static get_pending = null
+
+    static autoclosing =
+        {
+            start_notification_date: null,
+            counter_component: null,
+            notification_handle: null,
+            timeout: null,
+            seconds_before_warning: 60
+        }
+
+    static revalidate(remember)
+    {
+        var session_id
+        session_id = Cookies.get('session_id')
+        if (session_id)
+        {
+            Server.call
+            (
+                'Session.revalidate',
+                {
+                    session_id: session_id,
+                    user_id: Cookies.get('user_id'),
+                    remember: remember
+                }
+            )
+        }
+        else
+        {
+            Notifier.send(str.session.error_when_revalidating)
+        }
+    }
+    
+    static revalidateCallback(data)
+    {
+        if (data)
+        {
+            Cookies.set('user_id', data.user_id)
+            Cookies.set('session_id', data.session_id)
+            Cookies.set('remember', data.remember)
+            if (data.remember)
+            {
+                Session.validate(data.timeout)
+            }
+        }
+        else
+        {
+            Notifier.send(str.session.error_when_revalidating)
+        }
+    }
+
+    static validate(timeout)
+    {
+        return
+        Session.resetNotification()
+        Session.autoclosing.timeout = 
+            setTimeout
+            (
+                Session.notifyClosure, 
+                timeout - (Session.autoclosing.seconds_before_warning * 1000)
+            )
+    }
+
+    static notifyClosure()
+    {
+        var checkbox
+        checkbox = new Checkbox({checked: Cookies.get('remember')})
+        Session.autoclosing.start_notification_date = new Date()
+        Session.autoclosing.counter_component = 
+            new Component
+            (
+                {
+                    style: 
+                    {
+                        padding: '20px 0',
+                        font_size: 'larger',
+                        font_weight: 'bold',
+                        font_family: 'monospace',
+                        text_align: 'center'
+                    }
+                }
+            )
+        Session.autoclosing.notification_handle = 
+            Notifier.send
+            (
+                {
+                    component: 
+                        new Component
+                        (
+                            {
+                                style:
+                                {
+                                    padding: '0 20px',
+                                    text_align: 'center',
+                                    border_right: 'dashed 1px #cccccc',
+                                    margin_right: '5px'
+                                },
+                                components:
+                                [
+                                    Session.autoclosing.counter_component,
+                                    new Component
+                                    (
+                                        {
+                                            content: str.session.notice_of_closure,
+                                            attributes:
+                                            {
+                                                onclick: `Session.revalidate(Component.get(${checkbox.index}).getValue())`
+                                            },
+                                            style:
+                                            {
+                                                cursor: 'pointer',
+                                                user_select: 'none',
+                                                background_color: styles.background_color_highlight,
+                                                text_align: 'center',
+                                                border: 'solid 1px #cccccc',
+                                                padding: '10px',
+                                                border_radius: '4px'
+                                            }
+                                        }
+                                    ),
+                                    new Component
+                                    (
+                                        {
+                                            node: 'label',
+                                            style:
+                                            {
+                                                display: 'flex',
+                                                gap: '5px',
+                                                padding: '10px',
+                                                justify_content: 'center'
+                                            },
+                                            components:
+                                            [
+                                                checkbox,
+                                                new Component
+                                                (
+                                                    str.authenticator.remember
+                                                )
+                                            ]
+                                        }
+                                    )
+                                ]
+                            }
+                        ), 
+                    autodestroy: false, 
+                    type: 'warning'
+                }
+            )
+        Session.updateShutdownTimeout()
+    }
+
+    static updateShutdownTimeout()
+    {
+        var now, elapsed_time, time_remaining
+        now = new Date()
+        elapsed_time = now - Session.autoclosing.start_notification_date
+        time_remaining =
+            Math.max
+            (
+                Session.autoclosing.seconds_before_warning - (elapsed_time / 1000), 
+                0
+            )
+        Session.autoclosing.counter_component.set
+        (
+            'content', 
+            Math.ceil(time_remaining) + 's'
+        )
+        if (time_remaining)
+        {
+            Session.autoclosing.timeout = 
+                setTimeout
+                (
+                    Session.updateShutdownTimeout, 
+                    1000
+                )
+        }
+        else
+        {
+            Session.close()
+        }
+    }
+
+    static close()
+    {
+        alert(str.session.expired)
+        Notifier.close(Session.autoclosing.notification_handle)
+        Session.resetNotification()
+        Cookies.clear()
+        location.assign('.')
+    }
+
+    static resetNotification()
+    {
+        clearTimeout(Session.autoclosing.timeout)
+        Notifier.close(Session.autoclosing.notification)
+        Session.autoclosing.start_notification_date = null
+        Session.autoclosing.counter_component = null
+        Session.autoclosing.notification_handle = null
+        Session.autoclosing.timeout = null
+
+    }
+
+    static start()
+    {
+        str.session =
+            {
+                notice_of_closure: `a sessão vai expirar, clique aqui para revalidar`,
+                error_when_revalidating: `Falha: a sessão não pode ser revalidada. Tente se autenticar novamente.`,
+                expired: `A sessão expirou`
+            }
+    }
+}
+
+class SideMenu extends Component
+{
+    static defaults =
+        {
+            retreat: 10,
+            gap: 10,
+            items: [], // label, items, opened, disabled, action
+            active: null
+        }
+
+    items = []
+    gap = null
+    retreat = null
+
+    constructor(parameters = {})
+    {
+        var i
+        parameters =
+            {
+                ...SideMenu.defaults,
+                ...parameters
+            }
+        super()
+        for (i in parameters)
+        {
+            this.set(i, parameters[i])
+        }
+    }
+
+    set(key, value)
+    {
+        var i, item
+        switch (key)
+        {
+            case 'gap':
+            case 'retreat':
+                this[key] = isNaN(value) ? null : value 
+                break
+            case 'items':
+                this.clear()
+                if (Array.isArray(value))
+                {
+                    this.items = []
+                    for (i in value)
+                    {
+                        item = this.validateItem(value[i], [i])
+                        if (i < value.length - 1)
+                        {
+                            item.label.setStyle('margin_bottom', this.gap + 'px')
+                        }
+                        this.items.push(item)
+                        this.append(item.label)
+                    }
+                }
+                break
+            case 'active':
+                if (value !== null)
+                {
+                    this.open(value)
+                }
+                break
+            default:
+                super.set(key, value)
+        }
+    }
+
+    click(i)
+    {
+        if (this.items[i].folder)
+        {
+            this.items[i].opened = !this.items[i].opened
+            if (this.items[i].opened)
+            {
+                this.items[i].submenu =
+                    new Component
+                    (
+                        {
+                            style: 
+                            {
+                                margin_left: this.retreat + 'px'
+                            },
+                            components: this.items[i].content
+                        }
+                    )
+                this.insertAfter
+                (
+                    this.items[i].submenu, 
+                    this.items[i].label
+                )
+            }
+            else
+            {
+                this.items[i].submenu.destroy()
+                delete this.items[i].submenu
+            }
+        }
+        if (typeof this.items[i].action == 'function')
+        {
+            this.items[i].action(i)
+        }
+    }
+
+    validateItem(item, path)
+    {
+        var icon
+        item = 
+            {
+                label:
+                    typeof item.label == 'undefined' ?
+                        new Component({node: 'hr'})
+                    :
+                        item.label,
+                items:
+                    Array.isArray(item.items ?? null) ? 
+                        item.items
+                    :
+                        [],
+                opened:
+                    false,
+                disabled:
+                    item.disabled ?? false ?
+                        true
+                    :
+                        false,
+                action:
+                    typeof item.action == 'function' ?
+                        item.action
+                    :
+                        null
+            }
+        if (!(item.label instanceof Component))
+        {
+            item.label =
+                new Component
+                (
+                    {
+                        content: item.label,
+                        parse: true,
+                        style:
+                        {
+                            padding: '10px'
+                        }
+                    }
+                )
+        }
+        if (item.items.length)
+        {
+            icon = new Icon('keyboard_arrow_down')
+        } 
+        else if (item.action)
+        {
+            icon = new Icon('arrow_forward_ios')
+        }
+        else
+        {
+            icon = null
+        }
+        if (icon)
+        {
+            icon.setStyle('padding', '10px')
+            item.label =
+                new Component
+                (
+                    {
+                        style:
+                        {
+                            color: item.disabled ? styles.text_color_discreet : styles.text_color_normal,
+                            display: 'flex',
+                            justify_content: 'space-between',
+                            cursor: 'pointer',
+                            user_select: 'none'
+                        },
+                        attributes:
+                        {
+                            onclick: `Component.get(${this.index}).click([${path.join(',')}])`
+                        },
+                        components:
+                        [
+                            item.label,
+                            icon
+                        ]
+                    }
+                )
+        }
+        return item
     }
 }
 
@@ -4850,6 +6875,37 @@ class Table extends Component
 
 class Tabsheet extends Component
 {
+    /*
+    example
+    new Tabsheet
+    (
+        {
+            items:
+            [
+                Tabsheet.item
+                (
+                    'color', // or border or check
+                    {
+                        icon: my_icon_1,
+                        text: 'Tab #1', 
+                        onclick: 'some_function_1()'
+                    }
+                ),
+                Tabsheet.item
+                (
+                    'color',
+                    {
+                        icon: my_icon_2,
+                        text: 'Tab #2', 
+                        onclick: 'some_function_2()'
+                    }
+                )
+            ],
+            active: 0,
+            trigger: Tabsheet.trigger('color')
+        }
+    )
+    */
     static defaults =
         {
             break: false,
@@ -4912,7 +6968,7 @@ class Tabsheet extends Component
         }
         parameters.style =
             {
-                ...coalesce(parameters.style),
+                ...parameters.style ?? {},
                 ...
                 {
                     overflow: 'auto',
@@ -5391,7 +7447,7 @@ class Textarea extends Component
     getStyle()
     {
         var padding, userStyle, defaultStyle, finalStyle
-        userStyle = coalesce(this.userStyle, {})
+        userStyle = this.userStyle ?? {}
         padding = 
             {
                 'large': 10, 
@@ -5497,6 +7553,291 @@ class Video extends Component
     }
 }
 
+class Window
+{
+    static defaults =
+        {
+            show_close: true,
+            close_before: null,
+            close_callback: null,
+            title: '',
+            icon_type: null,
+            components: [],
+            background_color: '#ffffff',
+            border_color: '#cccccc',
+            background_color_title: '#eeeeee',
+            text_color_title: '#000000'
+        }
+    static instances = {}
+    index = null
+    close_before = null
+    close_callback = null
+    index = null
+    layer = null
+    window = null
+    icon = null
+    title = null
+    close = null
+    body = null
+    titlebar = null
+
+    constructor(parameters = {})
+    {
+        this.index = Page.nextSequence()
+        Window.instances[this.index] = this
+        parameters =
+            {
+                ...Window.defaults,
+                ...parameters
+            }
+        this.close_before = parameters.close_before
+        this.close_callback = parameters.close_callback
+        if (parameters.icon_type)
+        {
+            this.icon = new Icon({type: parameters.icon_type})
+        }
+        if (parameters.title)
+        {
+            this.title = new Component(parameters.title)
+        }
+        if (parameters.show_close)
+        {
+            this.close = 
+                new Icon
+                (
+                    {
+                        type: 'close', 
+                        attributes: {onclick: `Window.instances[${this.index}].close()`},
+                        style: {cursor: 'pointer'}
+                    }
+                )
+        }
+        this.window = 
+            new Component
+            (
+                {
+                    style:
+                    {
+                        background_color: parameters.background_color,
+                        border_color: parameters.border_color,
+                        position: 'absolute'
+                    }
+                }
+            )
+        if (this.icon || this.title || this.close)
+        {
+            this.titlebar =
+                new Component
+                (
+                    {
+                        style:
+                        {
+                            display: 'flex',
+                            justify_content: 'space_around',
+                            align_items: 'center',
+                            user_select: 'none',
+                            background_color: parameters.background_color_title,
+                            color: parameters.text_color_title
+                        }
+                    }
+                )
+            if (this.icon)
+            {
+                this.titlebar.append(this.icon)
+            }
+            if (this.title)
+            {
+                this.titlebar.append(this.title)
+            }
+            if (this.close)
+            {
+                this.titlebar.append(this.close)
+            }
+            this.body = new Component()
+            this.window.set('components', [this.titlebar, this.body])
+        }
+        else
+        {
+            this.body = this.window
+        }
+        this.body.set('components', parameters.components)
+        this.layer = 
+            new Component
+            (
+                {
+                    style:
+                    {
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        overflow: 'auto',
+                        display: 'flex',
+                        justify_content: 'center',
+                        align_items: 'center'
+                    },
+                    components: [this.window]
+                }
+            )
+        Page.body.append(this.layer)
+        //this.position()
+    }
+
+    /*
+    position()
+    {
+        var rect = this.window.getBoundingClientRect()
+        this.window.setStyle
+        (
+            'top', 
+            Math.max
+            (
+                0,
+                rect.height / 2
+            )
+        )
+    }
+    */
+
+    close()
+    {
+        if (this.close_before)
+        {
+            if (this.close_before(this) === false)
+            {
+                return
+            }
+        }
+        this.layer.destroy()
+        delete Window.instances[this.index]
+        this.close_before = undefined
+        this.close_callback = undefined
+        this.index = undefined
+        this.layer = undefined
+        this.window = undefined
+        this.icon = undefined
+        this.title = undefined
+        this.close = undefined
+        this.body = undefined
+        this.titlebar = undefined
+        if (this.close_callback)
+        {
+            this.close_callback()
+        }
+
+    }
+}
+
+class Icon extends Svg
+{
+    static defaults =
+        {
+            colors: ['#0d173f', '#e35150', '#ffffff'],
+            scale: 1,
+            type: 'app',
+            attributes: {fill: 'none'}
+        }
+
+    colors
+
+    scale
+
+    type
+
+    constructor(parameters = {})
+    {
+        var i
+        if (Format.isString(parameters))
+        {
+            parameters = {type: parameters}
+        }
+        parameters =
+            {
+                ...Icon.defaults,
+                ...parameters
+            }
+        super()
+        for (i in parameters)
+        {
+            this.set(i, parameters[i])
+        }
+    }
+
+    set(key, value)
+    {
+        var data
+        switch (key)
+        {
+            case 'scale':
+                this.scale = isNaN(value) ? 1 : value
+                if (this.type)
+                {
+                    this.set('type', this.type)
+                }
+                break
+            case 'colors':
+                this.colors = value
+                if (this.type)
+                {
+                    this.set('type', this.type)
+                }
+                break
+            case 'type':
+                if (!isset(svg[value]))
+                {
+                    throw new Error(str.icon.invalid_type + ': ' + value)
+                }
+                this.type = value
+                this.clear()
+                data = svg[value]
+                if (!isset(data.viewbox))
+                {
+                    data.viewbox = `0 0 ${this.scale * data.width} ${this.scale * data.height}`
+                }
+                this.set('components', Icon.paths(data.paths, this.colors))
+                this.setAttribute('width', this.scale * data.width)
+                this.setAttribute('height', this.scale * data.height)
+                this.setAttribute('viewBox', data.viewbox)
+                break
+            default:
+                super.set(key, value)
+        }
+    }
+
+    static paths(paths, colors)
+    {
+        var i, components
+        components = []
+        for (i in paths)
+        {
+            components.push
+            (
+                new Svg
+                (
+                    {
+                        node: 'path',
+                        attributes:
+                        {
+                            fill: colors[paths[i].color],
+                            d: paths[i].d
+                        }
+                    }
+                )
+            )
+        }
+        return components
+    }
+
+    static start()
+    {
+        str.icon =
+            {
+                invalid_type: 'Invalid Icon type'
+            }
+    }
+}
+
 class Page
 {
     static head
@@ -5504,6 +7845,10 @@ class Page
     static body
 
     static sequence = 0
+
+    static home_method
+
+    static title
 
     static styles =
         {
@@ -5541,7 +7886,10 @@ class Page
         {
             app:
             {
-                loading: 'carregando...'
+                loading: 'carregando...',
+                save: 'Salvar',
+                unexpected_error: 'Erro não esperado',
+                invalid_response: 'resultado inválido na autenticação'
             }
         }
 
@@ -5562,43 +7910,40 @@ class Page
             'tips'
         ]
 
-    static start()
+    static async start()
     {
-        var scope, argument, onload
+        var method
         window.styles = Object.assign({}, Page.styles)
         window.str = Object.assign({}, Page.str)
         window.img = Object.assign({}, Page.img)
         window.font = Object.assign({}, Page.font)
-        window.error = 
-            function(msg, className = '', method = '', parameters = '')
-            {
-                if (method)
-                {
-                    console.log('Error calling ' + (className ? className + '.' : '') + method + '():', parameters)
-                }
-                throw msg
-            }
         window.load = 
-            function(file, onload = '', async = false)
+            function(url)
             {
-                var script, parameters
-                parameters =
-                    {
-                        node: 'script',
-                        attributes:
-                            {
-                                src: file,
-                                onload: onload
-                            }
-                    }
-                if (async)
-                {
-                    parameters.attributes['async'] = true
-                }
-                script = new Component(parameters)
-                Page.head.append(script)
+                var promise
+                promise = 
+                    new Promise
+                    (
+                        function(resolve, reject)
+                        {
+                            const script = document.createElement('script')
+                            script.src = url
+                            script.async = false
+                            script.onload = 
+                                function()
+                                {
+                                    resolve()
+                                }
+                            script.onerror = 
+                                function()
+                                {
+                                    reject(new Error(`Falha ao carregar o script: ${url}`))
+                                }
+                            document.head.appendChild(script)
+                        }
+                    )
+                return promise
             }
-
         window.isset = 
             function()
             {
@@ -5612,7 +7957,6 @@ class Page
                 }
                 return true
             }
-
         window.have = 
             function()
             {
@@ -5653,26 +7997,6 @@ class Page
                 }
                 return true
             }
-
-        window.coalesce =
-            function()
-            {
-                var i
-                for (i in arguments)
-                {
-                    if 
-                    (
-                        typeof arguments[i] != 'undefined' 
-                        && 
-                        arguments[i] !== null
-                    )
-                    {
-                        return arguments[i]
-                    }
-                }
-                return null
-            }
-
         Page.head =
             new Component
             (
@@ -5727,6 +8051,7 @@ class Page
                 }
             )
         Audio.start()
+        Authenticator.start()
         Component.start()
         Datatable.start()
         File.start()
@@ -5735,43 +8060,45 @@ class Page
         Menu.start()
         Notifier.start()
         Server.start()
+        Session.start()
         Video.start()
-        if (typeof escopo == 'undefined')
+        await load('/js/svg.js')
+        window.config = 
+            escopo 
+            ?? 
+            {
+                callback: {script: 'static'}, 
+                user: null, 
+                title: ''
+            }
+        await load(`/js/${config.callback.script}.js`)
+        if (config.user)
         {
-            scope = {script: 'static'}
+            Session.revalidateCallback
+            (
+                {
+                    session_id: config.user['session'],
+                    user_id: config.user['hash_id'],
+                    remember: config.user['remember'],
+                    timeout: parseInt(config.timeout) * 60000 // max 2.147.483.647
+                }
+            )
+            eval(`${config.callback.method}(${JSON.stringify(config.callback.argument)})`)
         }
         else
         {
-            scope = escopo
+            Session.get_pending =
+                {
+                    method: config.callback.method,
+                    argument: config.callback.argument
+                }
         }
-        if (typeof scope.method == 'undefined')
-        {
-            onload = ''
-        }
-        else
-        {
-            argument = 
-                typeof scope.argument == 'undefined' ? 
-                    '' 
-                : 
-                    JSON.stringify(scope.argument)
-            onload = scope.method + '(' + argument + ')'
-        }
-        load
-        (
-            '/js/' + scope.script + '.js',
-            onload
-        )
+        delete config.callback
     }
 
     static nextSequence()
     {
         return ++this.sequence
-    }
-
-    static onresize()
-    {
-
     }
 
     static getZindex(type)

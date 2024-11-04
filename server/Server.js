@@ -1,5 +1,7 @@
+//const { config } = require('process')
 class Server
 {
+    static https = false
     static hostname = '127.0.0.1'
     static port = 8080
     static listener = null
@@ -10,205 +12,278 @@ class Server
             url_module_not_found: {},
             payload_post_invalid: {}
         }
-    
-    static start()
+    static metodos = {}
+
+    static async processRequest(request, response)
     {
-        const {createServer} = require('node:http')
-        this.listener = 
-            createServer
+        var url, root, url_parse, call, resource, method, usuario, sent_cookies
+        url = require('url')
+        root = __dirname + '/../'
+        url_parse = url.parse(request.url, true)
+        if (url_parse.pathname == '/favicon.ico')
+        {
+            url_parse.pathname = '/img/favicon.ico'
+        }
+        call = 
+            url_parse.pathname.replace
             (
-                function(request, response)
+                /^\/+|\/+$/gm, 
+                ''
+            )
+            .split('/')
+        sent_cookies = cookies.get(request)
+        usuario = session.validate(sent_cookies)
+        if (url_parse.pathname == '/')
+        {
+            console.log(url_parse.pathname + ' (raiz)')
+            console.log('Usuario ' + (usuario && Object.keys(usuario).length ? 'SIM' : 'NAO'))
+            method = 'Pagina.home'
+            method =
+                (
+                    usuario ?
+                        await config.get
+                        (
+                            'metodo_inicial', 
+                            method, 
+                            usuario.id
+                        )
+                    :
+                        method
+                )
+                .split('.')
+            Server.processaMetodo
+            (
+                method[0], 
+                method[1],
+                usuario,
+                sent_cookies,
+                request, 
+                response,
+                url_parse
+            )
+        }
+        else if (Server.validResource(call))
+        {
+            //console.log(url_parse.pathname + ' (recurso aberto)')
+            resource = root + call[call.length - 2] + '/' + call[call.length - 1] 
+            response.setHeader
+            (
+                'Content-Type', 
+                files.mime(resource)
+            )
+            response.statusCode = 200
+            fs.readFile
+            (
+                resource, 
+                function(error, data)
                 {
-                    var url, fs, root, url_parse, parameters, call, ajax, resource, pagina, escopo, html, files, user_class, class_name, method_name, payload
-                    url = require('url')
-                    fs = require('fs')
-                    root = __dirname + '/../'
-                    url_parse = url.parse(request.url, true)
-                    if (url_parse.pathname == '/favicon.ico')
+                    response.end(data)
+                }
+            )
+        }
+        else if (call.length == 2)
+        {
+            console.log(url_parse.pathname + ' (metodo)')
+            //console.log('Cookies ' + (sent_cookies && Object.keys(sent_cookies).length ? 'SIM' : 'NAO'))
+            console.log('Usuario ' + (usuario && Object.keys(usuario).length ? 'SIM' : 'NAO'))
+            Server.processaMetodo
+            (
+                call[0], 
+                call[1],
+                usuario, 
+                sent_cookies,
+                request, 
+                response,
+                url_parse
+            )
+        }
+        else
+        {
+            //console.log(url_parse.pathname + ' (chamada invalida)')
+            server.errorPage(false, request, response, usuario, url_parse)
+        }
+    }
+
+    static async processaMetodo
+    (
+        class_name, 
+        method_name,
+        usuario, 
+        sent_cookies,
+        request, 
+        response,
+        url_parse
+    )
+    {
+        //console.log('usuario', usuario)
+        var metodo, ajax, payload, user_class, root, html, escopo
+        root = __dirname + '/../'
+        ajax = request.method.toLowerCase() == 'post'
+        try 
+        {
+            metodo = Server.metodos[class_name + '.' + method_name]
+            if (!metodo)
+            {
+                throw new Error(`O metodo chamado ${class_name + '.' + method_name} deve estar registrado na tabela METODO`)
+            }
+            if 
+            (
+                (metodo.ajax && !ajax)
+                || 
+                (!metodo.ajax && ajax)
+            )
+            {
+                throw new Error('Incompatibilidade ajax')
+            }
+            switch (metodo.acessibilidade)
+            {
+                case 'C':
+                    if (!usuario)
                     {
-                        url_parse.pathname = '/img/favicon.ico'
+                        //redirecionar para tela de login
                     }
-                    call = 
-                        url_parse.pathname.replace
-                        (
-                            /^\/+|\/+$/gm, 
-                            ''
-                        )
-                        .split('/')
-                    ajax = request.method.toLowerCase() == 'post'
-                    if (url_parse.pathname == '/')
+                    break
+                case 'D':
+                    if (usuario)
                     {
-                        console.log(url_parse.pathname + ' (raiz)')
-                        pagina = require(root + 'server/Pagina')
-                        response.setHeader('Content-Type', 'text/html')
-                        response.statusCode = 200
-                        response.end
-                        (
-                            pagina.getHtml
-                            (
-                                {script: 'default'}
-                            )
-                        )
+                        //matar sessão
+                        session.exclui(usuario.session)
+                        usuario = null
                     }
-                    else if (Server.validResource(call))
-                    {
-                        console.log(url_parse.pathname + ' (recurso aberto)')
-                        files = require(root + 'server/Files')
-                        resource = root + call[call.length - 2] + '/' + call[call.length - 1] 
-                        response.setHeader
-                        (
-                            'Content-Type', 
-                            files.mime(resource)
-                        )
-                        response.statusCode = 200
-                        fs.readFile
-                        (
-                            resource, 
-                            function(error, data)
-                            {
-                                response.end(data)
-                            }
-                        )
-                    }
-                    else if (call.length == 2)
-                    {
-                        console.log(url_parse.pathname + ' (metodo)')
-                        class_name = call[0]
-                        method_name = call[1]
-                        try 
+                    break
+                case 'N':
+                    // direcionar para pagina de erro
+                    return
+            }
+            user_class = require(root + 'server/' + class_name)
+            sent_cookies = cookies.revalidate(sent_cookies)
+            if (ajax)
+            {
+                const form =
+                    new formidable.IncomingForm
+                    (
                         {
-                            user_class = require(root + 'server/' + class_name)
-                            if (ajax)
-                            {
-                                const formidable = require('formidable')
-                                const form =
-                                    new formidable.IncomingForm
-                                    (
-                                        {
-                                            multiples: true, 
-                                            allowEmptyFiles: true, 
-                                            minFileSize: 0
-                                        }
-                                    )
-                                form.parse
-                                (
-                                    request, 
-                                    function(error, fields, files)
-                                    {
-                                        if (error) 
-                                        {
-                                            Server.error
-                                            (
-                                                'payload_post_invalid', 
-                                                {
-                                                    request_mode: 'ajax',
-                                                    request_module: class_name + '.' + method_name,
-                                                    request_data: request
-                                                },
-                                                error
-                                            )
-                                        }
-                                        try 
-                                        {
-                                            fields = fields ? JSON.parse(fields.p[0]) : {}
-                                        }
-                                        catch (error)
-                                        {
-                                            Server.error
-                                            (
-                                                'payload_post_invalid', 
-                                                {
-                                                    request_mode: 'ajax',
-                                                    request_module: class_name + '.' + method_name,
-                                                    request_data: request
-                                                },
-                                                error
-                                            )
-                                        }
-                                        payload = user_class[method_name](fields, files)
-                                        response.setHeader('Content-Type', 'application/json')
-                                        response.statusCode = 200
-                                        response.end(JSON.stringify(payload))
-                                    }
-                                )
-                            }
-                            else
-                            {
-                                parameters = url_parse.query
-                                payload = 
-                                {
-                                    method: class_name + '.' + method_name,
-                                    argument: user_class[method_name](parameters)
-                                }
-                                if (typeof payload.script == 'undefined')
-                                {
-                                    payload.script = 'default'
-                                }
-                                pagina = require(root + 'server/Pagina')
-                                html = pagina.getHtml(payload)
-                                response.setHeader('Content-Type', 'text/html')
-                                response.statusCode = 200
-                                response.end(html)
-                            }
+                            multiples: true, 
+                            allowEmptyFiles: true, 
+                            minFileSize: 0
                         }
-                        catch (error) 
+                    )
+                form.parse
+                (
+                    request, 
+                    async function(error, fields, files)
+                    {
+                        if (error) 
                         {
-                            if (ajax)
-                            {
-                                response.statusCode = 400
-                                response.end()
-                            }
-                            else
-                            {
-                                escopo = {script: 'error'}
-                                pagina = require(root + 'server/Pagina')
-                                html = pagina.getHtml(escopo)
-                                response.setHeader('Content-Type', 'text/html')
-                                response.statusCode = 200
-                                response.end(html)
-                            }
                             Server.error
                             (
-                                'url_module_not_found',
+                                'payload_post_invalid', 
                                 {
-                                    request_mode: request.method.toLowerCase(),
-                                    request_path: url_parse.pathname,
-                                    request_parameters: parameters
+                                    request_mode: 'ajax',
+                                    request_module: class_name + '.' + method_name,
+                                    request_data: request
                                 },
                                 error
                             )
                         }
-                    }
-                    else
-                    {
-                        console.log(url_parse.pathname + ' (chamada invalida)')
-                        escopo = {script: 'error'}
-                        pagina = require(root + 'server/Pagina')
-                        html = pagina.getHtml(escopo)
-                        response.setHeader('Content-Type', 'text/html')
+                        try 
+                        {
+                            fields = fields ? JSON.parse(fields.p[0]) : {}
+                        }
+                        catch (error)
+                        {
+                            Server.error
+                            (
+                                'payload_post_invalid', 
+                                {
+                                    request_mode: 'ajax',
+                                    request_module: class_name + '.' + method_name,
+                                    request_data: request
+                                },
+                                error
+                            )
+                        }
+                        //console.log(`${class_name}.${method_name}()`, usuario)
+                        payload = 
+                            await user_class[method_name]
+                            (
+                                fields, 
+                                usuario, 
+                                files, 
+                                request, 
+                                response
+                            )
+                        response.setHeader('Content-Type', 'application/json')
                         response.statusCode = 200
-                        response.end(html)
-                        Server.error
-                        (
-                            'url_module_not_found',
-                            {
-                                request_mode: request.method.toLowerCase(),
-                                request_path: url_parse.pathname,
-                                request_parameters: parameters
-                            },
-                            {}
-                        )
+                        response.end(JSON.stringify(payload))
                     }
-                }
-            )
-        this.listener.listen
-        (
-            this.port, 
-            this.hostname,
-            function()
-            {
-                console.log('Servidor rodando em http://' + Server.hostname + ':' + Server.port)
+                )
             }
+            else
+            {
+                payload =
+                    {
+                        callback:
+                        {
+                            script: 'default',
+                            method: class_name + '.' + method_name,
+                            argument:
+                                usuario ?
+                                    await user_class[method_name]
+                                    (
+                                        url_parse.query, 
+                                        usuario, 
+                                        null, 
+                                        request, 
+                                        response
+                                    )
+                                :
+                                    url_parse.query
+                        },
+                        user: usuario,
+                        versao_desktop: app.versao_desktop,
+                        instituicao: app.instituicao,
+                        servidor_app: app.servidor_app,
+                        servidor_bd: app.servidor_bd,
+                        timeout: session.getTimeout(sent_cookies ? sent_cookies.remember : false),
+                        title: titulo
+                    }
+                html = pagina.getHtml(payload)
+                response.setHeader('Content-Type', 'text/html')
+                response.statusCode = 200
+                response.end(html)
+            }
+        }
+        catch (error) 
+        {
+            server.errorPage(ajax, request, response, usuario, url_parse)
+        }
+    }
+
+    static errorPage(ajax, request, response, usuario, url_parse)
+    {
+        var escopo, html
+        if (ajax)
+        {
+            response.statusCode = 400
+            response.end()
+        }
+        else
+        {
+            escopo = {callabck: {script: 'error'}, usuario: usuario}
+            html = pagina.getHtml(escopo)
+            response.setHeader('Content-Type', 'text/html')
+            response.statusCode = 200
+            response.end(html)
+        }
+        Server.error
+        (
+            'url_module_not_found',
+            {
+                request_mode: request.method.toLowerCase(),
+                request_path: url_parse.pathname
+            },
+            ''
         )
     }
 
@@ -219,9 +294,8 @@ class Server
 
     static validResource(call)
     {
-        var i, files, root, path, arquivos, arquivo
+        var i, root, path, arquivos, arquivo
         call = call.slice()
-        root = __dirname + '/../'
         if (call.length < 2)
         {
             return false
@@ -231,10 +305,70 @@ class Server
         {
             return false
         }
-        files = require(root + 'server/Files')
+        root = __dirname + '/../'
         arquivos = files.listar(root + path)
         arquivo = call.join('/')
         return arquivos.includes(arquivo)
+    }
+
+    static getUrl(metodo = '', parametros = null)
+    {
+        var i, classe, separador, url, porta
+        porta = this.https ? 443 : 80
+        porta = this.port != porta ? ':' + this.port : ''
+        url = this.https ? 'https://' : 'http://'
+        url += 'www' + this.hostname
+        url += porta
+        if (metodo)
+        {
+            [classe, metodo] = metodo.split('.')
+            url += '/' + classe + '/' + metodo
+            if (parametros)
+            {
+                url += '/'
+                separador = '?'
+                for (i in parametros)
+                {
+                    url += separador + i + '=' + parametros[i]
+                    separador = '&'
+                }
+            }
+        }
+        url = encodeURI(url)
+        return url
+    }
+    
+    static async start()
+    {
+        var i, sql, consulta
+        const {createServer} = require('node:http')
+        this.listener = createServer(this.processRequest)
+        this.listener.listen
+        (
+            this.port, 
+            this.hostname,
+            function()
+            {
+                console.log('Servidor rodando em http://' + Server.hostname + ':' + Server.port)
+            }
+        )
+        sql =
+            `
+            select
+                classe || '.' || metodo as metodo,
+                acessibilidade,
+                ajax
+            from metodo
+            `
+        consulta = await db.query(sql)
+        for (i of consulta.rows)
+        {
+            this.metodos[i.metodo] = 
+                {
+                    acessibilidade: i.acessibilidade,
+                    ajax: i.ajax
+                }
+        }
     }
 }
 

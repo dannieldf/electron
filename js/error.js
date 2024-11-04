@@ -26,7 +26,7 @@ Page.body.append
                             font_weight: 'bold',
                             margin_bottom: '15px'
                         },
-                        content: 'esta página não existe'
+                        content: 'esta página não existe ou está fora do ar'
                     }
                 ),
                 new Component

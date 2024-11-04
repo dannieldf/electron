@@ -1,4 +1,4 @@
-const { config } = require('nodemon')
+//const { config } = require('nodemon')
 
 class Sgbd
 {
@@ -24,13 +24,12 @@ class Sgbd
     
     static async start()
     {
-        console.log('Sgbd.start()')
-        if (typeof config.banco_postgres != 'undefined')
+        if (typeof app.banco_postgres != 'undefined')
         {
-            this.users.admin.name = config.banco_postgres.usuario
-            this.users.admin.pass = config.banco_postgres.senha
-            this.host = config.banco_postgres.host
-            this.port =config.banco_postgres.porta
+            this.users.admin.name = app.banco_postgres.usuario
+            this.users.admin.pass = app.banco_postgres.senha
+            this.host = app.banco_postgres.host
+            this.port = app.banco_postgres.porta
         }
         const {Client} = this.sgbd
         var parameters
@@ -143,6 +142,91 @@ class Sgbd
                             )
                             `
                         )
+                        await client.query
+                        (
+                            `
+                            comment on column config.tipo is 
+                            'text, numeric, date (data no formato DD/MM/YYYY HH24:MI:SS)'
+                            `
+                        )
+                        await client.query
+                        (
+                            `
+                            comment on column config.id_usuario is 
+                            'se o usuário não foi definido, então é uma configuração de sistema'
+                            `
+                        )
+                        await client.query
+                        (
+                            `
+                            create table sessao
+                            (
+                                id bigserial primary key,
+                                hash_id char(60),
+                                remember boolean,
+                                ini timestamp,
+                                fim timestamp,
+                                id_usuario bigint
+                            )
+                            `
+                        )
+                        await client.query
+                        (
+                            `
+                            comment on column sessao.hash_id is 
+                            'hash da senha do usuário, enviada pelo user-agent (cliente), salva como um cookie. Serve para permitir que o usuário se mantenha conectado'
+                            `
+                        )
+                        await client.query
+                        (
+                            `
+                            create table metodo
+                            (
+                                id bigserial primary key,
+                                classe varchar(255),
+                                metodo varchar(255),
+                                descricao text,
+                                ajax boolean,
+                                acessibilidade char(1),
+                                qtd_acessos bigint,
+                                media_duracao integer
+                            )
+                            `
+                        )
+                        await client.query
+                        (
+                            `
+                            comment on column metodo.acessibilidade is 
+                            'indica como o servidor deve tratar requisições a esses métodos: C = Precisa estar conectado então o sistema direciona para tela de login, D = Não pode estar conectado, então a sessão será derrubada, L = Liberado, N = Não liberado'
+                            `
+                        )
+                        await client.query
+                        (
+                            `
+                            comment on column metodo.media_duracao is 
+                            'média em segundos do tempo de processamento desse método'
+                            `
+                        )
+                        await client.query
+                        (
+                            `
+                            create table acesso
+                            (
+                                id bigserial primary key,
+                                data timestamp,
+                                duracao integer,
+                                id_sessao bigint,
+                                id_metodo bigint  
+                            )
+                            `
+                        )
+                        await client.query
+                        (
+                            `
+                            comment on column acesso.duracao is 
+                            'duração em segundos do processamento da requisição'
+                            `
+                        )
                         await client.end()
                     }
                     else
@@ -160,7 +244,6 @@ class Sgbd
                     Sgbd.on = false
                 }
             )
-        console.log('Sgbd.start() fim')
         return Sgbd.on
     }
 

@@ -3,11 +3,21 @@
     "instituicao": "",
     "servidor_app": "D",
     "servidor_bd": "D",
+    "bcrypt_salt_rounds": 10,
     "banco_postgres":
     {
         "host": "localhost",
         "porta": 5432,
         "usuario": "postgres",
         "senha": "123456"
+    },
+    "nodemailer":
+    {
+        "service": "gmail",
+        "auth":
+        {
+            "user": "simbapremium.app@gmail.com",
+            "pass": "2024-10-25"
+        }
     }
 }

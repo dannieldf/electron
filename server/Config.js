@@ -20,8 +20,6 @@ class Config
 					then to_timestamp(valor, 'DD/MM/YYYY HH24:MI:SS') 
 				end as valor_timestamp
             from config
-                end as valor
-            from config
             where chave = $1::text
             `
         parametros = [chave]
