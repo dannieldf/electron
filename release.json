@@ -3,6 +3,11 @@
     "instituicao": "",
     "servidor_app": "D",
     "servidor_bd": "D",
+    "https": false,
+    "host": "127.0.0.1",
+    "port": "8080",
+    "max_arquivos_upload": 100,
+    "max_tamanho_arquivo": 1048576000,
     "bcrypt_salt_rounds": 10,
     "banco_postgres":
     {

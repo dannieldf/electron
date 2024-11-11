@@ -1668,8 +1668,7 @@ class Requisicao
 
     static salvarCCS()
     {
-        var dados = Requisicao.form.getValues()
-        Server.call('Requisicao.salvarCCS', dados)
+        Server.call('Requisicao.salvarCCS', Requisicao.form)
     }
 
     static salvarCCSCallback(dados)

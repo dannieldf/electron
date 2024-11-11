@@ -96,6 +96,7 @@ class Component
         {
             case 'name':
                 this.name = value
+                this.element.name = value
                 break
             case 'nickname':
                 this.nickname = value
@@ -3000,6 +3001,7 @@ class File extends Component
                     attributes:
                     {
                         type: 'file',
+                        name: parameters.name ?? '',
                         onchange: 'Component.get(' + this.index + ').inputChange()'
                     }
                 }
@@ -3598,7 +3600,7 @@ class File extends Component
 
     processUpload(files)
     {
-        var i, file_reader, file, type, files_result
+        var i, file_reader, file, files_result
         file_reader = {}
         files_result = []
         for (i = 0; i < files.length; i++)
@@ -6149,7 +6151,7 @@ class Server
         component_notification_on_error = null
     )
     {
-        var i, index, terms, request, form_data
+        var i, j, index, terms, request, form_data, values
         index = Page.nextSequence()
         if (!have(component_notification_on_error))
         {
@@ -6203,6 +6205,59 @@ class Server
             (
                 'Server.onready(' + index + ');'
             )
+        if (parameters instanceof FormData)
+        {
+            request.send(parameters)
+        }
+        else if (parameters instanceof Component)
+        {
+            form_data = new FormData()
+            for (i in parameters.components)
+            {
+                if (parameters.components[i] instanceof File)
+                {
+                    for (j in parameters.components[i].files)
+                    {
+                        console.log('adicionando o input ' + parameters.components[i].name, parameters.components[i].files[j].file_data)
+                        form_data.append
+                        (
+                            //parameters.components[i].name,
+                            'files',
+                            parameters.components[i].files[j].file_data
+                        )
+                    }
+                }
+                else
+                {
+                    if (parameters.components[i].name)
+                    {
+                        form_data.append
+                        (
+                            parameters.components[i].name,
+                            parameters.components[i].getValue()
+                        )
+                    }
+                    else
+                    {
+                        values = parameters.components[i].getValues()
+                        for (j in values)
+                        {
+                            form_data.append
+                            (
+                                j,
+                                values[i]
+                            )
+                        }
+                    }
+                }
+            }
+            request.send(form_data)
+        }
+        else
+        {
+            request.setRequestHeader('Content-Type', 'application/json')
+            request.send(JSON.stringify(parameters))
+        }
         i = 
             Server.connections.push
             (
@@ -6213,9 +6268,6 @@ class Server
                     callback: callback
                 }
             )
-        form_data = new FormData()
-        form_data.append('p', JSON.stringify(parameters))
-        request.send(form_data)
         return i
     }
 

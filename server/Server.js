@@ -1,4 +1,335 @@
-//const { config } = require('process')
+class Server
+{
+    static multer = require('multer')
+    static path = require('path')
+    static express = require('express')
+    static app = Server.express()
+    static metodos = {}
+    static upload = 
+        Server.multer
+        (
+            {
+                dest: 'uploads',
+                limits: {fileSize: app.max_tamanho_arquivo}
+            }
+        )
+    static pastas_publicas =
+        [
+            'js',
+            'img',
+            'audio',
+            'video',
+            'docs',
+            'fonts'
+        ]
+
+    static getUsuario(req)
+    {
+        const sent_cookies = cookies.get(req)
+        const usuario = session.validate(sent_cookies)
+        return [usuario, sent_cookies]
+    }
+
+    static async home(req, res)
+    {
+        const [usuario, sent_cookies] = Server.getUsuario(req)
+        const metodo_default = 'Pagina.home'
+        const metodo =
+            (
+                usuario ?
+                    await config.get
+                    (
+                        'metodo_inicial', 
+                        metodo_default, 
+                        usuario.id
+                    )
+                :
+                    metodo_default
+            )
+            .split('.')
+        await Server.processaUrl
+        (
+            metodo[0],
+            metodo[1],
+            {},
+            usuario,
+            sent_cookies,
+            req,
+            res
+        )
+    }
+
+    static async get(req, res)
+    {
+        const [usuario, sent_cookies] = Server.getUsuario(req)
+        await Server.processaUrl
+        (
+            req.params[0],
+            req.params[1],
+            req.query,
+            usuario,
+            sent_cookies,
+            req,
+            res
+        )
+    }
+
+    static async processaUrl(classe, metodo, parametros, usuario, sent_cookies, req, res)
+    {
+        try 
+        {
+            const dados_metodo = Server.metodos[classe + '.' + metodo]
+            if (dados_metodo.ajax)
+            {
+                throw new Error('Incompatibilidade ajax')
+            }
+            switch (dados_metodo.acessibilidade)
+            {
+                case 'C':
+                    if (!usuario)
+                    {
+                        //redirecionar para tela de login
+                    }
+                    break
+                case 'D':
+                    if (usuario)
+                    {
+                        //matar sessão
+                        session.exclui(usuario.session)
+                        usuario = null
+                    }
+                    break
+                case 'N':
+                    // direcionar para pagina de erro
+                    return
+            }
+            const root = __dirname + '/../'
+            const user_class = require(root + 'server/' + classe)
+            sent_cookies = cookies.revalidate(sent_cookies)
+            const payload =
+                {
+                    callback:
+                    {
+                        script: 'default',
+                        method: classe + '.' + metodo,
+                        argument:
+                            usuario ?
+                                await user_class[metodo]
+                                (
+                                    parametros, 
+                                    usuario, 
+                                    null, 
+                                    req, 
+                                    res
+                                )
+                            :
+                                parametros
+                    },
+                    user: usuario,
+                    versao_desktop: app.versao_desktop,
+                    instituicao: app.instituicao,
+                    servidor_app: app.servidor_app,
+                    servidor_bd: app.servidor_bd,
+                    timeout: session.getTimeout(sent_cookies ? sent_cookies.remember : false),
+                    title: titulo
+                }
+            const html = pagina.getHtml(payload)
+            res.setHeader('Content-Type', 'text/html')
+            res.statusCode = 200
+            res.end(html)
+        }
+        catch (error) 
+        {
+            console.log(error)
+            Server.errorPage(res, usuario)
+        }
+    }
+
+    static async ajax(req, res)
+    {
+        try
+        {
+            const chamada = req.params.classe + '.' + req.params.metodo
+            const metodo = Server.metodos[chamada]
+            if (!metodo)
+            {
+                throw new Error(`O metodo chamado ${chamada} deve estar registrado na tabela METODO`)
+            }
+            if (!metodo.ajax)
+            {
+                throw new Error('Incompatibilidade ajax')
+            }
+            const [usuario, sent_cookies] = Server.getUsuario(req)
+            switch (metodo.acessibilidade)
+            {
+                case 'C':
+                    if (!usuario)
+                    {
+                        //redirecionar para tela de login
+                    }
+                    break
+                case 'D':
+                    if (usuario)
+                    {
+                        //matar sessão
+                        session.exclui(usuario.session)
+                        usuario = null
+                    }
+                    break
+                case 'N':
+                    // direcionar para pagina de erro
+                    return
+            }
+            const root = __dirname + '/../'
+            const user_class = require(root + 'server/' + req.params.classe)
+            const fields = req.body
+            const files = 
+                req.files ?
+                    await Promise.all
+                    (
+                        req.files.map
+                        (
+                            function(file)
+                            {
+                                delete fields[file.fieldname]
+                                console.log('Campo do arquivo: ' + file.fieldname)
+                                return file
+                                //const filePath = Server.path.join(__dirname, '../' + file.path)
+                                //const content = fs.readFileSync(filePath)
+                                //const mimeType = file.mimetype
+                                //const name = file.originalname
+                                //const size = file.size
+                                //return {name, mimeType, size, content: content.toString('base64')}
+                            }
+                        )
+                    )
+                :
+                    []
+            const payload = 
+                await user_class[req.params.metodo]
+                (
+                    fields,
+                    usuario,
+                    files,
+                    req,
+                    res,
+                    sent_cookies
+                )
+            res.json(payload)
+        }
+        catch (error)
+        {
+            console.log(error)
+            res.status(400)
+            res.json({})
+        }
+    }
+
+    static errorPage(res, usuario)
+    {
+        var escopo, html
+        escopo = 
+            {
+                callabck: {script: 'error'},
+                usuario: usuario
+            }
+        html = pagina.getHtml(escopo)
+        res.send(html)
+    }
+
+    static getUrl(metodo = '', parametros = null)
+    {
+        var i, classe, separador, url, porta
+        porta = this.https ? 443 : 80
+        porta = this.port != porta ? ':' + this.port : ''
+        url = this.https ? 'https://' : 'http://'
+        url += 'www' + this.hostname
+        url += porta
+        if (metodo)
+        {
+            [classe, metodo] = metodo.split('.')
+            url += '/' + classe + '/' + metodo
+            if (parametros)
+            {
+                url += '/'
+                separador = '?'
+                for (i in parametros)
+                {
+                    url += separador + i + '=' + parametros[i]
+                    separador = '&'
+                }
+            }
+        }
+        url = encodeURI(url)
+        return url
+    }
+
+    static async start()
+    {
+        var i, sql, consulta
+        sql =
+            `
+            select
+                classe || '.' || metodo as metodo,
+                acessibilidade,
+                ajax
+            from metodo
+            `
+        consulta = await db.query(sql)
+        for (i of consulta.rows)
+        {
+            this.metodos[i.metodo] = 
+                {
+                    acessibilidade: i.acessibilidade,
+                    ajax: i.ajax
+                }
+        }
+        Server.app.use
+        (
+            Server.express.urlencoded
+            (
+                {extended: true}
+            )
+        )
+        Server.app.use
+        (
+            Server.express.json()
+        )
+        for (i of Server.pastas_publicas)
+        {
+            Server.app.use
+            (
+                '/' + i,
+                Server.express.static(i)
+            )
+        }
+        Server.app.get
+        (
+            '/',
+            Server.home
+        )
+        Server.app.get
+        (
+            '/:classe/:metodo', 
+            Server.get
+        )
+        Server.app.post
+        (
+            '/:classe/:metodo', 
+            Server.upload.array('files', app.max_arquivos_upload), 
+            Server.ajax
+        )
+        Server.app.listen
+        (
+            app.port, 
+            function()
+            {
+                console.log('Servidor rodando na porta ' + app.port)
+            }
+        )
+    }
+}
+/*
 class Server
 {
     static https = false
@@ -371,5 +702,6 @@ class Server
         }
     }
 }
+*/
 
 module.exports = Server;
